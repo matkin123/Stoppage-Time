@@ -122,6 +122,33 @@ WC2022 11.4 min (both within reference bands). `scrape_board_espn.py` is retaine
 optional sensitivity path (e.g. the 2018-only *announced* 4th-official board). s08/s09 NOT
 re-run this session per the modular-session rule.
 
+## ADR-0012 — Nate 538 ground truth checked in + shared validation harness (2026-06-15)
+
+The silent-component fix (IMPL-1→IMPL-4) hinges on validating against Nate Silver's WC2018
+numbers, but those numbers previously existed only in a session transcript and a JPG in
+`~/Downloads`. Per CLAUDE.md §6 (validate against an EXTERNAL ground truth that is actually
+durable), the 32-match table is now transcribed and checked in at
+`data/raw/nate_2018/nate_wc2018.csv` (home, away, `bip`, `expected`, `actual`), so the project
+no longer depends on the external file.
+
+Shared harness `src/lib/nate.py` exposes the three validation arms and reconciliation. The
+column→quantity mapping is load-bearing and easy to get wrong, so it is fixed here and in the
+module docstring: **`bip` → s03 ball-in-play** (IMPL-2 promote-gate, r≥0.94); **`expected` →
+true-stoppage estimator** (IMPL-3 gate — the "should-be-added" model, mean ~13.2 min, e.g.
+Germany–Sweden 8:56); **`actual` → precise time-played board** (already validated, regression
+guard). Crossing `expected`/`actual` would silently corrupt the estimator and the headline
+counterfactual.
+
+Reconciliation is on the UNORDERED, name-normalized team pair within wc_2018 — 538 flips some
+home/away (its "Iceland–Nigeria" is StatsBomb "Nigeria–Iceland") and spells "S. Korea" where
+StatsBomb has "South Korea"; `nate.reconcile()` raises if any of the 32 fails to map.
+`tests/test_nate.py` (4 tests, green) guards: table parses + 538's printed DIFF is consistent;
+`expected` mean is the ~13.2 min level (not `actual`); all 32 reconcile to distinct match_ids;
+and the harness reproduces the validated board fit. Reproduced live: **BIP arm r=0.943,
+MAE 1.25 min** (the IMPL-2 baseline) and **board arm r=0.992, MAE 0.134 min** (matches ADR-0011)
+— i.e. the harness is correct against two independent ground-truth points before any IMPL
+session runs. No pipeline stage re-run; this is scaffolding only.
+
 ## ADR-XXXX — HEADLINE NUMBER (fill after s08)
 Chosen central knob_set: ______. X% = ____% (95% CI ____–____%). Non-tied X% = ____%.
 Rationale for the central knob choice and the main caveats (behavioral assumption,

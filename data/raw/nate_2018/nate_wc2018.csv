@@ -1,0 +1,42 @@
+# Nate Silver / FiveThirtyEight, "Nobody gets enough extra time" — first 32 matches of WC 2018.
+# Transcribed 2026-06-15 from ~/Downloads/nate silver WC stoppage 2018.jpg (checked in so the
+# project no longer depends on that external file). Columns:
+#   home, away          — as labelled by 538 (home/away orientation may differ from StatsBomb;
+#                          reconcile on the UNORDERED team pair, not on order — see src/lib/nate.py)
+#   bip                  — MINUTES BALL IN PLAY (mm:ss)         -> validate s03 BIP against this
+#   expected             — STOPPAGE TIME, EXPECTED (mm:ss)      -> validate true-stoppage estimator against this
+#   actual               — STOPPAGE TIME, ACTUAL (mm:ss)        -> validate the precise time-played board against this
+#   diff_min             — 538's printed DIFF (actual - expected, minutes); kept only as an internal transcription check
+home,away,bip,expected,actual,diff_min
+Russia,Saudi Arabia,55:27,10:27,06:45,-3.7
+Egypt,Uruguay,63:02,09:25,07:15,-2.2
+Portugal,Spain,57:23,14:08,05:51,-8.3
+Morocco,Iran,44:36,18:49,08:00,-10.8
+France,Australia,55:24,11:25,06:32,-4.9
+Peru,Denmark,51:41,13:39,08:03,-5.6
+Argentina,Iceland,60:03,08:44,06:09,-2.6
+Croatia,Nigeria,54:57,10:08,05:58,-4.2
+Brazil,Switzerland,59:30,15:32,08:52,-6.7
+Costa Rica,Serbia,57:02,12:35,09:36,-3.0
+Germany,Mexico,58:41,08:55,04:06,-4.8
+Sweden,S. Korea,51:21,14:58,06:19,-8.7
+Belgium,Panama,52:44,14:19,06:08,-8.2
+Tunisia,England,48:26,17:37,07:11,-10.4
+Poland,Senegal,56:21,11:57,06:33,-5.4
+Colombia,Japan,58:58,11:27,06:14,-5.2
+Russia,Egypt,53:25,08:07,04:10,-4.0
+Uruguay,Saudi Arabia,58:49,08:24,06:02,-2.4
+Portugal,Morocco,52:02,10:15,08:07,-2.1
+Iran,Spain,53:46,15:33,07:15,-8.3
+France,Peru,55:12,11:34,06:30,-5.1
+Denmark,Australia,60:11,10:08,05:07,-5.0
+Argentina,Croatia,51:56,16:24,06:13,-10.2
+Iceland,Nigeria,51:19,15:41,08:37,-7.1
+Brazil,Costa Rica,62:31,15:27,09:12,-6.3
+Serbia,Switzerland,56:31,10:26,07:57,-2.5
+Germany,Sweden,61:08,08:56,09:06,0.2
+S. Korea,Mexico,53:37,12:29,06:46,-5.7
+Belgium,Tunisia,50:58,20:58,07:14,-13.7
+England,Panama,53:25,19:01,07:22,-11.7
+Poland,Colombia,56:16,18:37,09:08,-9.5
+Japan,Senegal,51:51,15:02,04:59,-10.1

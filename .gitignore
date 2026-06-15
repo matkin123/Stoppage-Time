@@ -8,6 +8,11 @@ figures/**
 !data/processed/.gitkeep
 !figures/.gitkeep
 
+# Exception: checked-in EXTERNAL ground truth (not regenerable pipeline data).
+# Nate Silver / 538 WC2018 table — the validation spine for the silent-component work.
+!data/raw/nate_2018/
+!data/raw/nate_2018/nate_wc2018.csv
+
 # Python
 .venv/
 __pycache__/
