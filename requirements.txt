@@ -1,0 +1,14 @@
+# Pinned to the versions verified working in the base env on 2026-06-15.
+# NumPy is held <2 deliberately: scipy 1.10.x requires numpy<1.27 and pyarrow's C-ABI
+# build expects numpy 1.x. numpy 1.26.4 is the one version satisfying scipy (<1.27),
+# pandas (>=1.26), and pyarrow simultaneously. Do NOT bump numpy to 2.x without also
+# upgrading scipy and rebuilding pyarrow.
+numpy==1.26.4
+pandas==3.0.3
+pyarrow==16.1.0     # pandas 3.x requires pyarrow>=13
+scipy==1.10.1
+matplotlib==3.7.1
+PyYAML==6.0
+requests==2.32.3
+tqdm==4.65.0
+pytest==7.4.0

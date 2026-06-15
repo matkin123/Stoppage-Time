@@ -1,0 +1,19 @@
+# Data: never commit. raw/ is immutable cache; interim/processed are regenerable.
+data/raw/**
+data/interim/**
+data/processed/**
+figures/**
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!figures/.gitkeep
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store

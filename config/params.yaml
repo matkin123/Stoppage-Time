@@ -1,0 +1,65 @@
+# Tunable parameters. Every change here should get an ADR entry in docs/decisions.md.
+
+bip:
+  # Gap method (s03): a possession's last event -> next restart is "dead".
+  # restart_play_patterns are the play_pattern values that mark the ball coming back in.
+  restart_play_patterns:
+    - "From Throw In"
+    - "From Corner"
+    - "From Free Kick"
+    - "From Goal Kick"
+    - "From Kick Off"
+    - "From Keeper"
+  # Minimum gap (seconds) before a restart-boundary interval is counted as dead time.
+  min_dead_gap_s: 0.0
+  # Max gap (seconds) the ball can be "in play" with zero recorded events. Any inter-
+  # event gap >= this is dead even without a restart pattern (injury / VAR / slow restart
+  # within a possession). In active play StatsBomb logs an event every few seconds, so a
+  # 20s+ silent gap is not live. Tuned to hit the s03 calibration gate (WC2022 full-match
+  # BIP within +/-90s of Opta 58:04): G=20s -> 3460s, 24s under target.
+  max_live_gap_s: 20.0
+  # Calibration target (Opta published WC2022 pooled ball-in-play, mm:ss -> seconds).
+  calibration_target_s: 3484   # 58:04
+  calibration_tolerance_s: 90
+  inplay_share_sane_lo: 0.55
+  inplay_share_sane_hi: 0.60
+
+phases:
+  # Stoppage threshold in WITHIN-PERIOD seconds: period_s >= 2700 means past 45:00 in a
+  # half (the 45' mark in P1, the 90' mark in P2). Keyed off period_s, not the cumulative
+  # clock, so a long first half doesn't bleed the elapsed clock past 45:00 prematurely.
+  half_stoppage_s: 2700
+  bucket_minutes: 10
+
+incident:
+  # s05 lower-bound dead-time component windows are bounded to avoid absurd attributions.
+  max_celebration_s: 180
+  max_sub_s: 90
+  max_card_s: 120
+  max_injury_s: 600
+  conservative_injury_estimate_s: 30   # used in s08 true_stoppage knob
+
+counterfactual:
+  n_sims: 10000
+  seed: 20260615
+  n_bootstrap: 1000
+  # knob grids (each combination is a row in the sensitivity grid)
+  true_stoppage_knobs:
+    - lower_bound
+    - lower_bound_plus_injury
+    - full_measure_538   # 2018 only; falls back to lower_bound elsewhere
+  lambda_conditioning_knobs:
+    - overall
+    - tied_nontied
+    - team_role
+  lambda_source_knobs:
+    - pooled_post
+    - pooled_pre
+    - regime_matched
+
+references:
+  # External published numbers used as acceptance gates (documented, not derived).
+  opta_wc2022_bip_s: 3484          # 58:04
+  board_pre_mean_min: 7
+  board_post_wc2022_mean_min: 11.5
+  goals_after_90_wc2022_share: 0.125   # ~12-13% (538)

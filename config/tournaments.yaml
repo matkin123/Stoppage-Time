@@ -1,0 +1,52 @@
+# Locked core dataset. Each entry's `expected_matches` is the ingest checksum (s01 gate).
+# IDs verified against StatsBomb open-data competitions.json (2026-06-15).
+# Source: https://raw.githubusercontent.com/statsbomb/open-data/master/data/competitions.json
+
+tournaments:
+  - key: wc_2018
+    name: "FIFA World Cup 2018"
+    competition_id: 43
+    season_id: 3
+    group: PRE
+    expected_matches: 64
+
+  - key: euro_2020
+    name: "UEFA Euro 2020"
+    competition_id: 55
+    season_id: 43
+    group: PRE
+    expected_matches: 51
+
+  - key: wc_2022
+    name: "FIFA World Cup 2022"
+    competition_id: 43
+    season_id: 106
+    group: POST
+    expected_matches: 64
+
+  - key: euro_2024
+    name: "UEFA Euro 2024"
+    competition_id: 55
+    season_id: 282
+    group: POST
+    expected_matches: 51
+
+  - key: copa_america_2024
+    name: "Copa America 2024"
+    competition_id: 223
+    season_id: 282
+    group: POST
+    expected_matches: 32
+
+  - key: afcon_2023
+    name: "African Cup of Nations 2023"
+    competition_id: 1267
+    season_id: 107
+    group: POST
+    expected_matches: 52
+
+# Group-level checksums (s01 gate). PRE=115, POST=199, total=314.
+group_checksums:
+  PRE: 115
+  POST: 199
+  TOTAL: 314
