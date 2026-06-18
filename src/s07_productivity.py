@@ -181,6 +181,33 @@ def main() -> None:
         desc.to_parquet(config.PROCESSED / "played_in_stoppage_descriptive.parquet")
         print("  played-in-stoppage PRE vs POST (min/match):")
         print(desc.to_string())
+
+        # --- A.2 time-wasting WITHIN played stoppage (IMPL-7 Part A.2, ADR-0021 O3) ---
+        # Dead-ball minutes during the added time that WAS played = played * (1 - live_share),
+        # per (match, half). The rate (1 - live_share) is the in-stoppage time-wasting rate the
+        # s08 O3 gross-up applies to the OMITTED clock. Needs no board data; purely descriptive.
+        pmap = {1: "1H_stoppage", 2: "2H_stoppage"}
+        lsr = (live_share[live_share["phase"].isin(["1H_stoppage", "2H_stoppage"])]
+               .set_index(["match_id", "phase"])["live_share"])
+        tw_rows = []
+        for r in pis[pis["period"].isin([1, 2])].itertuples(index=False):
+            share = lsr.get((r.match_id, pmap[r.period]), np.nan)
+            if pd.isna(share):
+                continue
+            tw_rows.append({
+                "match_id": r.match_id, "group": r.group, "period": int(r.period),
+                "played_min": float(r.played_in_stoppage_min),
+                "timewaste_rate": 1.0 - float(share),
+                "timewaste_min": float(r.played_in_stoppage_min) * (1.0 - float(share)),
+            })
+        tw = pd.DataFrame(tw_rows)
+        tw.to_parquet(config.PROCESSED / "timewasting_descriptive.parquet", index=False)
+        per_tw = tw.groupby(["match_id", "group"])["timewaste_min"].sum()
+        grp_tw = per_tw.groupby("group").mean()
+        pooled_rate = (tw["timewaste_min"].sum() / tw["played_min"].sum())
+        print(f"  A.2 time-wasting within played stoppage: pooled rate "
+              f"{pooled_rate:.3f} (dead/played); mean min/match "
+              f"PRE {grp_tw.get('PRE', float('nan')):.2f} / POST {grp_tw.get('POST', float('nan')):.2f}")
     else:
         print("  (played-in-stoppage data absent -- run s06a to add PRE/POST descriptives)")
 

@@ -128,6 +128,21 @@ counterfactual:
     - pooled_pre
     - pooled_post
     - regime_matched
+  # Productivity-premium rail (IMPL-7 Part C, ADR-0021 #2). The omitted minutes need not carry
+  # the full end-game urgency premium (2H-stoppage lambda 0.0816 ~= 1.4x the open-play 0.0427).
+  # `observed` applies the per-window stoppage lambda (UPPER rail, the central); `open_play`
+  # applies the cohort's regular-play lambda to the omitted minutes (LOWER rail, zero-premium
+  # floor). live_share CANCELS in mu, so this is a lambda choice, not a live-share knob.
+  productivity_premium_knobs:
+    - observed
+    - open_play
+  # In-stoppage time-wasting gross-up (IMPL-7 Part C, ADR-0021 #3 / O3). `off` = base model.
+  # `on` grosses up the omitted CLOCK by the in-stoppage time-wasting that the added time itself
+  # generates (factor 1 + time-wasting_rate, rate = 1 - live_share), then applies productivity to
+  # the live portion. Implemented faithfully though it RAISES X% (user sign-off, no agenda).
+  timewaste_grossup_knobs:
+    - "off"
+    - "on"
 
 references:
   # External published numbers used as acceptance gates (documented, not derived).

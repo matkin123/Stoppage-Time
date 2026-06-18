@@ -5,6 +5,86 @@ number and its band must be locked here (with the chosen knob_set) before publis
 
 ---
 
+## ADR-0023 — IMPL-7 Parts A.2 + C built: productivity-premium band, O3 gross-up, outcome-flip wired (X% still NOT locked) (2026-06-18)
+
+**Build session, not a lock.** Executed `prompts/impl_7_board_cooling.md` Parts A.2 + C against the
+processed tables (Part B de-scoped per ADR-0022; Part A.1 announced-board Δ DEFERRED — see below). The
+ADR-0021 directional decisions are now wired into s07/s08/s09 and reproduce their targets exactly.
+**X% is deliberately still NOT locked** (the ADR-XXXX template stays blank; the lock is the final,
+separate session). Upstream FROZEN (bip.py/s03 r=0.943; s05 estimator r=0.825; ADR-0019 remodel).
+
+**What was built.**
+- **Two new knobs** in `params.yaml:counterfactual` → `productivity_premium_knobs: [observed, open_play]`
+  and `timewaste_grossup_knobs: ["off", "on"]`. The grid is now 5-axis (silent × cond × source × prem ×
+  gw), knob_set string `"{silent}|{cond}|{source}|{prem}|{gw}"`, 96 rows on the `all` group.
+- **Productivity-premium band (ADR-0021 #2)** in s08: `open_play` swaps the per-window stoppage λ for the
+  cohort's `regular`-play λ on the omitted minutes (helper `regular_lambda_cells`, cell key
+  `("__regular__", cohort)`). live_share cancels in μ, so this is a λ choice; the rails are EXACT to
+  ADR-0021: 1H+2H **16.3% (open_play floor) .. 23.8% (observed)**; 2H_only **9.7% .. 17.1%**.
+- **O3 in-stoppage time-wasting gross-up (ADR-0021 #3)** in s08: `gw="on"` grosses up the omitted CLOCK
+  by (1 + timewaste_rate), timewaste_rate = (1 − live_share), so the live factor becomes
+  `lsw*(2−lsw)` vs `lsw`. Faithful, RAISES X% (user sign-off, no agenda): central 1H+2H **23.8 → 31.6%**,
+  2H_only **17.1 → 23.6%**.
+- **Outcome-flip secondary (ADR-0021 #1)** in s08: stricter "different OUTCOME" cut on `state_at_90` —
+  tied flips on any extra goal (1−exp(−μ)); lead_by_1 flips when the trailing team (half-rate) equalizes+
+  (1−exp(−μ/2)); lead_by_2plus unflippable. Per-knob `pct_outcome_flip`; central **12.2%** (1H+2H) /
+  **8.8%** (2H_only). Matches ADR-0021's "≈12.7% illustrative."
+- **A.2 time-wasting within played stoppage (Part A)** in s07: dead-ball minutes during the added time
+  that WAS played = `played × (1 − live_share)` per (match, half) → `processed/timewasting_descriptive.parquet`.
+  Pooled rate **50.6%** (dead/played); mean min/match PRE **3.26** / POST **5.19**. This is the same rate
+  the s08 O3 gross-up consumes — one source, no double estimate.
+- **s09**: f05 narrowed to the focused band figure (cond=overall, source=pooled_all, 12 rows labelled
+  silent × prem × grossup); ledger gains Productivity-premium-band, O3-gross-up, Outcome-flip, and A.2
+  sections. **CENTRAL** knob is now the 5-part `silent_marked|overall|pooled_all|observed|off` = 23.8%
+  [CI 20.3%, 28.0%].
+
+**Gate: PASSED.** `pytest` green (24/24; `test_s08_silent_knob_brackets_headline` updated to pivot the
+5-part knob_set with prem+gw in the index so the none≤marked≤all monotonicity still holds per cell).
+
+**DEFERRED (turnkey, separate session): Part A.1 announced-board under-allocation.** `board_announced`
+stays NULL. The SofaScore incidents scrape (314 matches, ~3 h rate-limited, ADR-0020 API) is its own
+unit — `prompts/scrape_board_announced.md`. When populated, Δ = `true_stoppage − board_announced`
+becomes a full-sample DESCRIPTIVE distortion (never calibrated into the headline; same treatment as the
+cooling sensitivity, ADR-0022). User chose "defer scrape; wire plumbing" to keep this session modular
+and compute-light (CLAUDE.md §6).
+
+---
+
+## ADR-0022 — R2 resolved: cooling-break detection DE-SCOPED — no robust accuracy gain (2026-06-18)
+
+**Research + read-only empirical check (`prompts/research_cooling.md`); no pipeline change.** The
+redesign hypothesised that adding cooling-break duration as PURE stoppage would improve match-level r
+vs Nate (IMPL-7 Part B). Tested against the processed tables; the hypothesis is **rejected**, so
+cooling detection is **dropped from IMPL-7**. Full writeup: `prompts/research_cooling_findings.md`;
+durable pointer in memory `reference_cooling_policy.md`.
+
+**Policy context (why detection was ever in scope).** Mandatory-every-match breaks start at WC2026,
+AFTER our sample. In-sample, breaks are rule-triggered: **AFCON2023** had two per match by CAF rule;
+**WC2022** had ~none (winter + air-conditioned, WBGT threshold never met); **WC2018/Euro2020/Euro2024/
+Copa2024** are temperature-variable (~32 °C WBGT/air trigger, ~30'/75' or ~25', 90s–3min by body).
+
+**Empirical finding (the decisive part).**
+1. **Already captured.** On AFCON2023 (breaks guaranteed), the clear break gaps (>120s in the 25'–40'
+   window, n=36) average 168s, of which the s05 estimator (`restart_excess` + marker-gated silent)
+   ALREADY credits **~122s (73%)**, missing only **~46s/break** (the per-restart allowance shaved off,
+   ADR-0017). The "uncounted silent gap" premise is ≤27% true.
+2. **No robust r gain (WC2018, the ONLY Nate-validated set; baseline r=0.825 / MAE 2.44).** WC2018
+   barely had breaks (4/32 matches >120s gap, 2/32 >150s — the mild-venue prior). A naive "+3 min/break"
+   DEGRADES (r→0.780, MAE +1.07) by double-counting the 73% already credited; the correct
+   "missed-remainder only" (+~46s) moves r by +0.012–0.014 at strict thresholds but −0.016 at a loose
+   one — sign flips with the threshold, i.e. within noise.
+3. **Unvalidatable where it matters.** Breaks concentrate in POST (AFCON/Copa), which has no Nate
+   ground truth; the one external check (WC2018) can't show a gain.
+
+**Decision.** De-scope cooling detection from IMPL-7 (drop Part B). Do not build the weather-gating /
+commentary pipeline. If ever wanted, represent cooling ONLY as a small, clearly-labeled POST-only
+sensitivity (~46s/break × detected breaks ≈ ~1.5 min/match on AFCON), shown as a band, never
+calibrated into the headline — same treatment as the announced-board under-allocation (ADR-0020).
+This does NOT change the frozen s05 estimator or the headline; IMPL-7 now = board_announced
+under-allocation (R1/ADR-0020) + Part C band-building (ADR-0021).
+
+---
+
 ## ADR-0021 — Headline framing + productivity-premium band (pre-lock DIRECTION; X% still NOT locked) (2026-06-18)
 
 A post-IMPL-6 (ADR-0019) discussion with the user resolved four modeling questions that steer IMPL-7

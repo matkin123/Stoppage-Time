@@ -128,8 +128,11 @@ Two decisions beyond O1-O3 that IMPL-7 must build and the lock must report:
   Source = SofaScore incidents API (`injuryTime.length` per half); findings in
   `prompts/research_board_findings.md`. Enables under-allocation Δ = true_stoppage - board_announced
   as a FULL-SAMPLE distortion (not WC2022-only). Wire in IMPL-7.
-- **R2 (`prompts/research_cooling.md`)** — cooling/water-break policy + per-match detection; add
-  ~3 min pure stoppage where present; hypothesis: improves match-level r vs Nate.
+- **R2 (`prompts/research_cooling.md`)** — **RESOLVED + DE-SCOPED (ADR-0022, 2026-06-18).** Hypothesis
+  (add ~3 min pure stoppage; improves match-level r vs Nate) was tested read-only and REJECTED: the s05
+  estimator already credits ~73% of a break via `restart_excess`, WC2018 (the only Nate-validated set)
+  barely had breaks, and a naive add DEGRADES r while the careful add is within noise. Cooling detection
+  is DROPPED from IMPL-7. Findings: `prompts/research_cooling_findings.md`.
 
 ## FROZEN — do not reopen
 `bip.py` / s03 calibration (r=0.943); the s05 true-stoppage estimator + its constants (r=0.825,
@@ -141,6 +144,6 @@ MEASUREMENT (ADR-0011) — it is only RENAMED, the number is unchanged; the Nate
 1. **IMPL-6** (`prompts/impl_6_remodel.md`) — core remodel: D1-D4, target model, O1-O3, DC1-DC3.
    No research needed. Re-validate, re-run s07->s08->s09, bring the new grid to the user. Do NOT lock.
 2. **R1 + R2** research sessions (independent; run anytime; deferred to save compute).
-3. **IMPL-7** (`prompts/impl_7_board_cooling.md`) — wire board_announced distortions + cooling-break
-   stoppage once research returns; re-validate r vs Nate.
+3. **IMPL-7** (`prompts/impl_7_board_cooling.md`) — wire board_announced under-allocation (R1/ADR-0020)
+   + Part C band-building (ADR-0021). Cooling-break stoppage (Part B) is DE-SCOPED (ADR-0022).
 4. **LOCK** X% + CI + band with the user (the paused ADR-XXXX headline template).

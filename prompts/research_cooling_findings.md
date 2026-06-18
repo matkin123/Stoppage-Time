@@ -7,7 +7,41 @@ temperature-variable and need per-match flagging. A free **Open-Meteo weather ga
 confirm** on the small shortlist is the dependable route; pure event-stream automation is feasible
 but lower-precision.
 
-## (a) Per-tournament policy
+**>>> OVERRIDING VERDICT (2026-06-18, empirical — see addendum + ADR-0022): DE-SCOPED. Explicitly
+accounting for water breaks does NOT robustly improve estimator accuracy, so cooling detection is
+dropped from IMPL-7. The policy/detection survey below is retained only as reference for an optional
+labeled POST-only sensitivity.** <<<
+
+## Empirical addendum (2026-06-18) — checked against the pipeline; result: de-scope
+Before building any detection, the premise ("a cooling break is dead time the s05 estimator
+under-counts") was tested read-only against the processed tables. It does not hold up.
+
+**A. Is the break already captured? — AFCON2023, where every match had two breaks by CAF rule.**
+For the clear break gaps (max inter-event gap in the 25'–40' window > 120s, n=36): mean gap **168s**,
+of which the full s05 estimator (`restart_excess` + marker-gated silent) **already credits ~122s
+(73%)** and misses only **~46s/break**. So the "uncounted silent gap" framing is at most ~27% true —
+most of a break is already in `true_stoppage` (chiefly via `restart_excess`, ADR-0017); the missed
+sliver is mainly the per-restart allowance shaved off (`incident.restart_normal_s`, 20–60s).
+
+**B. Does adding cooling improve r vs Nate? — WC2018, the ONLY Nate-validated set (baseline r=0.825,
+MAE 2.44).** WC2018 (Russia) barely had breaks: only **4/32** matches show a >120s window gap, **2/32**
+above 150s — consistent with the mild-venue prior. Two correction styles:
+- **Naive "+3 min/break"** (the obvious move if you don't know it's 73% captured): r degrades to as
+  low as **0.780**, MAE up to **+1.07 min** — it double-counts what `restart_excess` already credits.
+- **Correct "missed-remainder only" (+~46s/break):** r moves **+0.012 to +0.014** at strict detection
+  thresholds (120–150s) but **−0.016** at a loose 90s threshold; MAE moves a few seconds either way.
+  The sign flips with the threshold → **within noise, not a robust win.**
+
+**Verdict.** Where breaks actually occur (POST: AFCON every match, Copa many) there is no Nate ground
+truth to validate any correction; where we can validate (WC2018) there are almost no breaks and the
+estimator already over-predicts those marginal matches. Net: no robust accuracy gain, and the
+over-eager version actively hurts. **Decision (ADR-0022): de-scope cooling detection from IMPL-7.**
+If ever wanted, represent it ONLY as a small, clearly-labeled POST-only sensitivity (~46s/break ×
+detected breaks ≈ ~1.5 min/match on AFCON), shown as a band, never calibrated into the headline —
+the same treatment as the announced-board under-allocation. (Reproducible read-only check; the
+scratch script was not kept — re-derive from `events_norm` + `true_stoppage` + `src/lib/nate.py`.)
+
+## (a) Per-tournament policy  *(reference only — see overriding verdict above)*
 
 | Tournament | Governing rule | Trigger | Timing | Duration | Used? |
 |---|---|---|---|---|---|

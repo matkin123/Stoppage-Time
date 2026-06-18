@@ -111,6 +111,26 @@ def _state_key(conditioning, window, mid, st_dict):
     return ("tied_nontied", "tied" if st_dict[mid][sc] == "tied" else "nontied")
 
 
+def regular_lambda_cells(prod):
+    """reg_cells[cohort] = (goal_count, live_minutes) for OPEN PLAY (phase=regular), per cohort.
+
+    The productivity-premium LOWER rail (open_play, ADR-0021 #2) applies the regular-play goal
+    rate -- the same goals-per-live-minute people see for 95% of the match, with no end-game
+    urgency premium -- to the omitted stoppage minutes. Pulled straight from s07's productivity
+    table (scope pooled / group:PRE / group:POST) so the floor lambda traces to the ledger."""
+    scope_of = {"all": "pooled", "pre": "group:PRE", "post": "group:POST"}
+    out = {}
+    for cohort, scope in scope_of.items():
+        row = prod[(prod["scope"] == scope) & (prod["dimension"] == "phase") &
+                   (prod["phase_or_bucket"] == "regular") & (prod["metric"] == "goals")]
+        if row.empty:
+            out[cohort] = (0.0, 0.0)
+        else:
+            r = row.iloc[0]
+            out[cohort] = (float(r["n_events"]), float(r["live_minutes"]))
+    return out
+
+
 def main() -> None:
     config.ensure_dirs()
     p = config.params()
@@ -119,6 +139,7 @@ def main() -> None:
     state = pd.read_parquet(config.INTERIM / "match_state.parquet")
     incident = pd.read_parquet(config.INTERIM / "incident_stoppage.parquet")
     live_share = pd.read_parquet(config.PROCESSED / "stoppage_live_share.parquet")
+    prod = pd.read_parquet(config.PROCESSED / "productivity.parquet")
     pis_path = config.INTERIM / "played_in_stoppage.parquet"
     if not pis_path.exists():
         raise SystemExit(
@@ -181,6 +202,9 @@ def main() -> None:
         return s / 60.0
 
     cells = build_lambda_cells(matches, goals, state, live_min)
+    # open-play floor cells for the productivity-premium LOWER rail (keyed ("__regular__", cohort))
+    for coh, ce in regular_lambda_cells(prod).items():
+        cells[("__regular__", coh)] = ce
     st_dict = state.set_index("match_id").to_dict("index")
     group = matches.set_index("match_id")["group"].to_dict()
     eligible = [m for m in matches["match_id"] if (m, "2H") in played]
@@ -188,28 +212,50 @@ def main() -> None:
     grp_arr = np.array([group[m] for m in eligible])
     group_masks = {"all": np.ones(n, bool),
                    "PRE": grp_arr == "PRE", "POST": grp_arr == "POST"}
+    # state at 90' per match -> which matches can flip the OUTCOME (winner/draw), not just the
+    # scoreline (ADR-0021 #1). Only tied (any extra goal flips) and lead_by_1 (the TRAILING team
+    # must score; per-team half-rate split) can flip; lead_by_2plus is treated as unflippable.
+    s90 = np.array([st_dict[m]["state_at_90"] for m in eligible])
+    tied90 = s90 == "tied"
+    lead1_90 = s90 == "lead_by_1"
+
+    def outcome_flip(mu_arr):
+        pf = np.zeros(n)
+        pf[tied90] = p_change(mu_arr[tied90])              # any goal breaks the tie
+        pf[lead1_90] = p_change(mu_arr[lead1_90] / 2.0)    # trailing team (half rate) equalizes+
+        return pf
 
     per_match_rows, summary_rows = [], []
     central_2h_only = {}  # knob_set -> central X% (2H_only) for the comparison line
     grid = list(itertools.product(
-        cfg["true_stoppage_knobs"], cfg["lambda_conditioning_knobs"], cfg["lambda_source_knobs"]))
-    for ts_knob, cond_knob, src_knob in grid:
-        knob_set = f"{ts_knob}|{cond_knob}|{src_knob}"
+        cfg["true_stoppage_knobs"], cfg["lambda_conditioning_knobs"], cfg["lambda_source_knobs"],
+        cfg["productivity_premium_knobs"], cfg["timewaste_grossup_knobs"]))
+    for ts_knob, cond_knob, src_knob, prem_knob, gw_knob in grid:
+        knob_set = f"{ts_knob}|{cond_knob}|{src_knob}|{prem_knob}|{gw_knob}"
+        grossup = gw_knob == "on"
 
         # per-window per-match arrays + a per-window cell index for the bootstrap
-        ts_arr, played_arr, ls_arr, olive, lam, cellidx = {}, {}, {}, {}, {}, {}
+        ts_arr, played_arr, ls_arr, fl_arr, olive, lam, cellidx = {}, {}, {}, {}, {}, {}, {}
         distinct, cell_ce = {}, []
         for window in ("1H", "2H"):
             tsw = np.array([ts_window_min(m, window, ts_knob) for m in eligible])
             plw = np.array([played.get((m, window), 0.0) for m in eligible])
             lsw = np.nan_to_num(
                 np.array([ls_ratio.get((m, window), 0.0) for m in eligible]), nan=0.0)
-            olivew = np.maximum(0.0, tsw - plw) * lsw
+            # O3 gross-up (ADR-0021 #3): inflate omitted CLOCK by (1 + time-wasting_rate),
+            # rate = 1 - live_share, then take the live portion (x live_share). live factor is
+            # lsw*(2-lsw) grossed-up vs lsw at base. live_share otherwise CANCELS against lambda.
+            flw = lsw * (2.0 - lsw) if grossup else lsw
+            olivew = np.maximum(0.0, tsw - plw) * flw
             cnt_w = np.zeros(n)
             exp_w = np.zeros(n)
             idx_w = np.zeros(n, dtype=int)
             for i, m in enumerate(eligible):
-                ck = (_cohort_of(src_knob, group[m]), window) + _state_key(cond_knob, window, m, st_dict)
+                coh = _cohort_of(src_knob, group[m])
+                if prem_knob == "open_play":
+                    ck = ("__regular__", coh)         # open-play floor lambda (LOWER rail)
+                else:
+                    ck = (coh, window) + _state_key(cond_knob, window, m, st_dict)
                 c, e = cells[ck]
                 cnt_w[i], exp_w[i] = c, e
                 if ck not in distinct:
@@ -217,7 +263,7 @@ def main() -> None:
                     cell_ce.append((c, e))
                 idx_w[i] = distinct[ck]
             exp_safe = np.where(exp_w > 0, exp_w, 1.0)
-            ts_arr[window], played_arr[window], ls_arr[window] = tsw, plw, lsw
+            ts_arr[window], played_arr[window], ls_arr[window], fl_arr[window] = tsw, plw, lsw, flw
             olive[window] = olivew
             lam[window] = cnt_w / exp_safe * (exp_w > 0)
             cellidx[window] = idx_w
@@ -243,8 +289,8 @@ def main() -> None:
             lam1, lam2 = g[cellidx["1H"]], g[cellidx["2H"]]
             if sigma > 0:
                 E = rng.normal(0.0, sigma, size=n)
-                ol1 = np.maximum(0.0, ts_arr["1H"] + E * f1 - played_arr["1H"]) * ls_arr["1H"]
-                ol2 = np.maximum(0.0, ts_arr["2H"] + E * f2 - played_arr["2H"]) * ls_arr["2H"]
+                ol1 = np.maximum(0.0, ts_arr["1H"] + E * f1 - played_arr["1H"]) * fl_arr["1H"]
+                ol2 = np.maximum(0.0, ts_arr["2H"] + E * f2 - played_arr["2H"]) * fl_arr["2H"]
             else:
                 ol1, ol2 = olive["1H"], olive["2H"]
             mub = {"2H_only": lam2 * ol2, "1H+2H": lam1 * ol1 + lam2 * ol2}
@@ -255,10 +301,12 @@ def main() -> None:
 
         for w in mu:
             pc = p_change(mu[w])
+            flip = outcome_flip(mu[w])
             for gl, mask in group_masks.items():
                 summary_rows.append({
                     "window": w, "group": gl, "knob_set": knob_set,
                     "pct_changed": float(pc[mask].mean()),
+                    "pct_outcome_flip": float(flip[mask].mean()),
                     "ci_lo": float(np.quantile(boot[w][gl], 0.025)),
                     "ci_hi": float(np.quantile(boot[w][gl], 0.975)),
                     "n_matches": int(mask.sum()),
@@ -272,19 +320,42 @@ def main() -> None:
     per_match.to_parquet(config.PROCESSED / "counterfactual.parquet", index=False)
     summary.to_parquet(config.PROCESSED / "counterfactual_summary.parquet", index=False)
 
-    # ---- print the headline-window sensitivity grid + the window comparison --------------
-    print(f"\n  HEADLINE WINDOW = {headline_window}  (X% = mean P[>=1 extra goal]); group=all:")
-    hl = summary[(summary["window"] == headline_window) & (summary["group"] == "all")]
+    # ---- print the headline-window sensitivity grid + the Part C band --------------------
+    central = "silent_marked|overall|pooled_all|observed|off"
+    hl = summary[(summary["window"] == headline_window) & (summary["group"] == "all")].copy()
+    print(f"\n  HEADLINE WINDOW = {headline_window}  (X% = mean P[>=1 extra goal]); group=all "
+          f"({len(hl)} knob_sets):")
     for _, r in hl.sort_values("pct_changed").iterrows():
-        print(f"    {r['knob_set']:<45} X={r['pct_changed']:6.3f}  "
-              f"ci=[{r['ci_lo']:.3f},{r['ci_hi']:.3f}]")
-    central = "silent_marked|overall|pooled_all"
+        star = "  <- CENTRAL" if r["knob_set"] == central else ""
+        print(f"    {r['knob_set']:<52} X={r['pct_changed']:6.3f}  "
+              f"ci=[{r['ci_lo']:.3f},{r['ci_hi']:.3f}]  flip={r['pct_outcome_flip']:.3f}{star}")
+
     c_all = hl[hl["knob_set"] == central]
     if not c_all.empty:
         r = c_all.iloc[0]
-        print(f"\n  central knob ({central}): 2H_only X={central_2h_only[central]:.3f} vs "
-              f"{headline_window} X={r['pct_changed']:.3f} "
-              f"ci=[{r['ci_lo']:.3f},{r['ci_hi']:.3f}]")
+        print(f"\n  CENTRAL ({central}): {headline_window} X={r['pct_changed']:.3f} "
+              f"ci=[{r['ci_lo']:.3f},{r['ci_hi']:.3f}]; 2H_only X={central_2h_only[central]:.3f}; "
+              f"outcome-flip {r['pct_outcome_flip']:.3f}")
+
+    # ADR-0021 Part C band: at the central silent/conditioning/source, the productivity-premium
+    # rails (open_play=LOWER, observed=UPPER) bracket the headline; the O3 gross-up raises it.
+    def at(silent, prem, gw, win):
+        q = summary[(summary["group"] == "all") & (summary["window"] == win) &
+                    (summary["knob_set"] == f"{silent}|overall|pooled_all|{prem}|{gw}")]
+        return q.iloc[0] if not q.empty else None
+    print("\n  PRODUCTIVITY-PREMIUM BAND (silent_marked|overall|pooled_all):")
+    for win in (headline_window, "2H_only"):
+        lo, hi = at("silent_marked", "open_play", "off", win), at("silent_marked", "observed", "off", win)
+        if lo is not None and hi is not None:
+            print(f"    {win:<7}  open_play(LOWER) {lo['pct_changed']:.3f} .. "
+                  f"observed(UPPER) {hi['pct_changed']:.3f}")
+    print("  O3 TIME-WASTING GROSS-UP (silent_marked|overall|pooled_all, observed lambda):")
+    for win in (headline_window, "2H_only"):
+        off, on = at("silent_marked", "observed", "off", win), at("silent_marked", "observed", "on", win)
+        if off is not None and on is not None:
+            print(f"    {win:<7}  off {off['pct_changed']:.3f} -> on {on['pct_changed']:.3f} "
+                  f"(raises X%, ADR-0021 #3)")
+
     print(f"\n  wrote counterfactual.parquet ({len(per_match)} rows) and counterfactual_summary.parquet")
     print("  STOP: read the sensitivity grid above before locking a single X% in decisions.md.")
 

@@ -90,9 +90,10 @@ def test_s08_silent_knob_brackets_headline():
     allg = s[s["group"] == "all"].copy()
     parts = allg["knob_set"].str.split("|", expand=True)
     allg["silent"], allg["cond"], allg["source"] = parts[0], parts[1], parts[2]
+    allg["prem"], allg["gw"] = parts[3], parts[4]
     assert {"silent_none", "silent_marked", "silent_all"} <= set(allg["silent"])
-    piv = allg.pivot_table(index=["window", "cond", "source"], columns="silent",
-                           values="pct_changed")
+    piv = allg.pivot_table(index=["window", "cond", "source", "prem", "gw"],
+                           columns="silent", values="pct_changed")
     assert (piv["silent_none"] <= piv["silent_marked"] + 1e-9).all()
     assert (piv["silent_marked"] <= piv["silent_all"] + 1e-9).all()
 

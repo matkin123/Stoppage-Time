@@ -1,8 +1,9 @@
 # IMPL-7 — Board-announced distortions + cooling breaks
 
-**DEPENDS ON** `prompts/research_board.md` (R1) and `prompts/research_cooling.md` (R2) having been run
-and their findings reviewed. Read `docs/redesign.md`. `CLAUDE.md §6`: one unit, validate, STOP. This
-runs AFTER IMPL-6 (the core remodel). Upstream FROZEN as in IMPL-6.
+**DEPENDS ON** `prompts/research_board.md` (R1, DONE/ADR-0020). R2 (`prompts/research_cooling.md`) is
+DONE and **Part B is DE-SCOPED (ADR-0022)** — this session is now **Part A (board_announced
+under-allocation) + Part C (band-building)** only. Read `docs/redesign.md`. `CLAUDE.md §6`: one unit,
+validate, STOP. This runs AFTER IMPL-6 (the core remodel). Upstream FROZEN as in IMPL-6.
 
 ## A. Board-announced distortions (uses R1 findings)
 - If R1 found a free source for the 4th-official announced board: populate `board_announced` (per
@@ -14,13 +15,18 @@ runs AFTER IMPL-6 (the core remodel). Upstream FROZEN as in IMPL-6.
      ball during the played added time). Needs NO board data. This also yields the time-wasting RATE
      that feeds the Part C gross-up (ADR-0021 O3), so compute it here and carry the rate forward.
 
-## B. Cooling breaks as pure stoppage (uses R2 findings)
-- If R2 produced per-match cooling-break flags: add the break duration (~3 min, per R2) as PURE
-  (non-live) stoppage for flagged matches — as an explicit, audited adjustment to `true_stoppage`
-  (not silently folded in).
-- Re-validate r / MAE vs Nate's 32 WC2018 matches (`src/lib/nate.py`, validate against `expected`).
-  Hypothesis: this improves match-level r. **If it does NOT improve r, do not ship it** — record the
-  negative result in the ADR.
+## B. Cooling breaks as pure stoppage — DE-SCOPED (ADR-0022, 2026-06-18). DO NOT BUILD.
+R2 ran the "if it does NOT improve r, do not ship it" check ahead of time (read-only, against the
+processed tables) and the hypothesis was REJECTED — so this part is dropped:
+- The s05 estimator already credits **~73%** of a cooling break via `restart_excess` (measured on
+  AFCON2023, where every match had breaks: clear break gaps avg 168s, ~122s already credited, ~46s
+  missed). The "uncounted silent gap" premise is ≤27% true.
+- On WC2018 (the only Nate-validated set; baseline r=0.825) a naive "+3 min/break" DEGRADES r (→0.780,
+  MAE +1.07) by double-counting; the careful "missed-remainder only" add is within noise (sign flips
+  with the detection threshold). Breaks concentrate in POST, which has no Nate ground truth.
+- See `prompts/research_cooling_findings.md` + ADR-0022. If a reviewer insists on representing cooling,
+  do it ONLY as a labeled POST-only sensitivity (~46s/break × detected breaks ≈ ~1.5 min/match on
+  AFCON), shown as a band, never calibrated into the headline — NOT as an estimator-accuracy change.
 
 ## C. Counterfactual band finalization (ADR-0021 — build these so the lock just SELECTS)
 These are small, well-specified s08/s09 changes. The headline ships as a BAND, not a point.
@@ -39,7 +45,8 @@ These are small, well-specified s08/s09 changes. The headline ships as a BAND, n
    brackets it (ADR-0021 #4).
 
 ## Gate + checkpoint
-- pytest green; r vs Nate reported before/after for part B. The full sensitivity band (silent ×
-  productivity-premium rails, + outcome-flip secondary) printed by s08 and in the s09 ledger.
+- pytest green. (Part B dropped — no r-vs-Nate re-validation needed; the estimator is unchanged.)
+  The full sensitivity band (silent × productivity-premium rails, + outcome-flip secondary) printed
+  by s08 and in the s09 ledger.
 - ADR in `docs/decisions.md` with results. Update `next_session.md`. STOP.
 - After this, the FINAL session locks X% + CI + band (the paused ADR-XXXX headline template).

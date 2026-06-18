@@ -28,15 +28,27 @@ hazard — do NOT overengineer**: `P(≥1)=1−P(0)` already only uses the pre-f
 open-play floor brackets it. These BUILD in **IMPL-7 Part C** so the final session just SELECTS rails.
 Full rationale: `docs/decisions.md` ADR-0021 + `docs/redesign.md` ADDENDUM. **X% still NOT LOCKED.**
 
-**Current unit = R2 (deferred research), THEN IMPL-7, THEN the final LOCK.** (R1 DONE 2026-06-18.)
+**Current unit = the final LOCK** (IMPL-7 Parts A.2 + C DONE 2026-06-18, ADR-0023; R1+R2 DONE).
 - R1 — announced-board sourcing: **DONE 2026-06-18 (ADR-0020).** YES, free for all six via SofaScore
   incidents API (`injuryTime.length` per half). Findings: `prompts/research_board_findings.md`;
-  memory `reference_board_announced.md`. `board_announced` is no longer NULL — wire in IMPL-7.
-- R2 — cooling-break policy/detection (expert-quant): **`prompts/research_cooling.md`**.
-- IMPL-7 — board distortions + cooling stoppage + **Part C: build the ADR-0021 band** (productivity
-  rails, O3 gross-up, outcome-flip secondary), after R1/R2: **`prompts/impl_7_board_cooling.md`**.
-- Final session — lock X% + CI + sensitivity band in `docs/decisions.md`, eyes open (just SELECT rails).
-Each is self-contained; **`docs/redesign.md`** is the full spec. R1/R2 are research-only (no code).
+  memory `reference_board_announced.md`.
+- R2 — cooling-break policy/detection: **DONE + DE-SCOPED 2026-06-18 (ADR-0022).** Read-only empirical
+  check REJECTED the "improves r vs Nate" hypothesis. **Cooling detection is DROPPED — Part B not built.**
+  Findings: `prompts/research_cooling_findings.md`; memory `reference_cooling_policy.md`.
+- IMPL-7 Parts A.2 + C — **DONE 2026-06-18 (ADR-0023).** Wired into s07/s08/s09, all reproduce ADR-0021:
+  productivity-premium BAND rails (1H+2H 16.3% open_play floor .. 23.8% observed; 2H_only 9.7% .. 17.1%),
+  O3 time-wasting gross-up (1H+2H 23.8→31.6%, faithful/RAISES X%), outcome-flip secondary (12.2% 1H+2H /
+  8.8% 2H_only), A.2 in-stoppage time-wasting descriptive (pooled rate 50.6%, PRE 3.26 / POST 5.19 min).
+  Two new knobs in `params.yaml` (`productivity_premium_knobs`, `timewaste_grossup_knobs`); 5-part
+  knob_set; central `silent_marked|overall|pooled_all|observed|off`. **24 pytest green.**
+- **DEFERRED — IMPL-7 Part A.1 (announced-board under-allocation Δ).** `board_announced` still NULL.
+  Turnkey scrape unit: **`prompts/scrape_board_announced.md`** (SofaScore incidents, 314 matches,
+  ~3 h rate-limited; ADR-0020 API). Δ = `true_stoppage − board_announced` is a DESCRIPTIVE distortion
+  only (never calibrated into X%). Run as its own session before/independent of the lock.
+- **Final session (NEXT) — lock X% + CI + sensitivity band** in `docs/decisions.md` (fill the ADR-XXXX
+  HEADLINE template), eyes open: just SELECT the rails (silent treatment, productivity-premium rail,
+  window, λ source) from the s08 grid + ledger. Nothing left to BUILD.
+Each is self-contained; **`docs/redesign.md`** is the full spec.
 **Everything below this line is HISTORY (IMPL-0→IMPL-6, all DONE).**
 
 **AUTHORITATIVE POINTER (2026-06-15):** Items 1 and 2 are DONE. The silent-component research
@@ -122,8 +134,8 @@ the old s08 to lock; do IMPL-6 instead.
 
 **Turnkey prompts (open a fresh session and run one):**
 - `prompts/research_board.md`        → R1 (DONE 2026-06-18, ADR-0020 — SofaScore; see research_board_findings.md)
-- `prompts/research_cooling.md`      → R2 (CURRENT — cooling-break policy/detection; expert-quant)
-- `prompts/impl_7_board_cooling.md`  → IMPL-7 (after R1/R2 — distortions + cooling stoppage)
+- `prompts/research_cooling.md`      → R2 (DONE + DE-SCOPED 2026-06-18, ADR-0022 — see research_cooling_findings.md)
+- `prompts/impl_7_board_cooling.md`  → IMPL-7 (CURRENT — board under-allocation Part A + band-building Part C; Part B cooling DE-SCOPED)
 - `prompts/impl_6_remodel.md`        → IMPL-6 (DONE 2026-06-18, ADR-0019 — core remodel)
 - `prompts/impl_1..3, impl_5, impl_4_counterfactual_lock` → IMPL-0→IMPL-5 (DONE — history)
 Each is self-contained; **`docs/redesign.md`** is the full spec the IMPL prompts execute.
