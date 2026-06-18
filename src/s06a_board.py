@@ -1,23 +1,23 @@
-"""s06a -- Board added time (external source).
+"""s06a -- Played-in-stoppage time (RENAMED from "board"; ADR-0011/0019, DC2).
 
-The fourth-official board number is NOT in StatsBomb, so it must come from outside.
-This stage joins a curated cache onto matches. Populate:
+The quantity in the raw cache is the time the half was ACTUALLY PLAYED past 45:00/90:00
+(period_end_s - 2700), produced by `board_statsbomb.py`. It was historically mislabeled
+"board"; the announced fourth-official board is a DIFFERENT number we have not sourced yet
+(see prompts/research_board.md / R1). This stage renames the measurement to
+`played_in_stoppage_min` and reserves a NULL `board_announced` column for that future input.
+The raw CSV keeps its original column name (`board_min`) as the immutable measurement layer.
 
     data/raw/board/board_added_time.csv
     columns: date,home,away,period,board_min,source
       date       YYYY-MM-DD (matches matches.parquet date)
       period     1 or 2
-      board_min  integer minutes shown on the board for that half
-      source     sofascore | espn | fifa  (priority order per spec)
-
-Source priority when collecting: Sofascore incidents (injuryTime per period) ->
-ESPN summary -> FIFA match reports (WCs). An optional best-effort Sofascore fetch is
-available via STOPPAGE_BOARD_LIVE=1, but the deterministic path is the CSV cache so a
-pipeline run never depends on a live site.
+      board_min  minutes actually played past 45:00/90:00 for that half (time-played)
+      source     statsbomb | sofascore | espn | fifa
 
 In:  interim/matches.parquet, raw/board/board_added_time.csv
-Out: interim/board_added_time.parquet
-Gate: PRE-group board mean ~7 min; POST WC2022 ~11-12 min.
+Out: interim/played_in_stoppage.parquet
+       columns: ..., played_in_stoppage_min (= raw board_min), board_announced (NULL for now)
+Gate: PRE-group played-in-stoppage mean ~7 min; POST WC2022 ~11-12 min.
 """
 from __future__ import annotations
 
@@ -66,20 +66,30 @@ def main() -> None:
     out = merged[
         ["match_id", "tournament", "group", "period", "board_min", "source"]
     ].sort_values(["match_id", "period"])
-    out.to_parquet(config.INTERIM / "board_added_time.parquet", index=False)
+    # DC2 rename: the measured quantity is time PLAYED in stoppage, not the announced board.
+    out = out.rename(columns={"board_min": "played_in_stoppage_min"})
+    # board_announced = the true fourth-official number; not sourced yet (R1). NULL placeholder
+    # so downstream under-allocation work (IMPL-7) has a column to populate without a schema change.
+    out["board_announced"] = pd.NA
+    out = out[
+        ["match_id", "tournament", "group", "period",
+         "played_in_stoppage_min", "board_announced", "source"]
+    ]
+    out.to_parquet(config.INTERIM / "played_in_stoppage.parquet", index=False)
 
     # ---- gate ------------------------------------------------------------
-    per_match = out.groupby(["match_id", "group", "tournament"])["board_min"].sum().reset_index()
-    pre_mean = per_match[per_match["group"] == "PRE"]["board_min"].mean()
-    wc22 = per_match[per_match["tournament"] == "wc_2022"]["board_min"].mean()
-    print(f"\n  board rows joined: {len(out)}  matches: {out['match_id'].nunique()}")
+    per_match = (out.groupby(["match_id", "group", "tournament"])["played_in_stoppage_min"]
+                 .sum().reset_index())
+    pre_mean = per_match[per_match["group"] == "PRE"]["played_in_stoppage_min"].mean()
+    wc22 = per_match[per_match["tournament"] == "wc_2022"]["played_in_stoppage_min"].mean()
+    print(f"\n  played-in-stoppage rows joined: {len(out)}  matches: {out['match_id'].nunique()}")
     print(f"  PRE mean per match: {pre_mean:.1f} min (ref ~7)")
     print(f"  WC2022 mean per match: {wc22:.1f} min (ref ~11-12)")
     warn = []
     if pd.notna(pre_mean) and not (5 <= pre_mean <= 9):
-        warn.append(f"PRE board mean {pre_mean:.1f} outside 5-9")
+        warn.append(f"PRE played-in-stoppage mean {pre_mean:.1f} outside 5-9")
     if pd.notna(wc22) and not (10 <= wc22 <= 13):
-        warn.append(f"WC2022 board mean {wc22:.1f} outside 10-13")
+        warn.append(f"WC2022 played-in-stoppage mean {wc22:.1f} outside 10-13")
     for w in warn:
         print(f"  WARNING: {w}")
     print("  s06a complete (gate is reference-band check; see warnings above).")

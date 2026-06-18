@@ -30,14 +30,17 @@ def fig_productivity_by_bucket(prod):
     sub = prod[(prod["dimension"] == "bucket") & (prod["scope"] == "pooled") &
                (prod["metric"] == "goals")].copy()
     sub["b"] = sub["phase_or_bucket"].astype(int)
-    sub = sub.sort_values("b")
+    # DC3: drop extra-time buckets (>=10). They produced a spurious minute-120 spike from
+    # ET/penalty goals that read as if penalties contaminate regulation scoring. The figure is
+    # a REGULATION productivity curve (buckets 0-9 = P1 0-45, P2 45-90); ET is out of scope.
+    sub = sub[sub["b"] < 10].sort_values("b")
     fig, ax = plt.subplots(figsize=(9, 5))
     ax.errorbar(sub["b"] * 10, sub["rate"],
                 yerr=[sub["rate"] - sub["ci_lo"], sub["ci_hi"] - sub["rate"]],
                 fmt="o-", capsize=3)
     ax.set_xlabel("match minute (bucket start)")
     ax.set_ylabel("goals per live-minute")
-    ax.set_title("Goal productivity per live-minute by 10-min bucket (pooled)")
+    ax.set_title("Goal productivity per live-minute by 10-min bucket (pooled, regulation only)")
     return _save(fig, "f01_productivity_by_bucket.png")
 
 
@@ -55,38 +58,38 @@ def fig_stoppage_by_state(prod):
 
 
 def fig_board_pre_post():
-    path = config.PROCESSED / "board_descriptive.parquet"
+    path = config.PROCESSED / "played_in_stoppage_descriptive.parquet"
     if not path.exists():
         return None
     desc = pd.read_parquet(path)
     fig, ax = plt.subplots(figsize=(5, 5))
     ax.bar(desc.index.astype(str), desc["mean"])
-    ax.set_ylabel("board added time per match (min)")
-    ax.set_title("Board added time: PRE vs POST")
+    ax.set_ylabel("time played in stoppage per match (min)")
+    ax.set_title("Time played in stoppage: PRE vs POST")
     return _save(fig, "f03_board_pre_post.png")
 
 
 def fig_lb_vs_board():
     inc_path = config.INTERIM / "incident_stoppage.parquet"
-    board_path = config.INTERIM / "board_added_time.parquet"
-    if not board_path.exists():
+    pis_path = config.INTERIM / "played_in_stoppage.parquet"
+    if not pis_path.exists():
         return None
     inc = pd.read_parquet(inc_path)
-    board = pd.read_parquet(board_path)
+    pis = pd.read_parquet(pis_path)
     matches = pd.read_parquet(config.INTERIM / "matches.parquet")
     lb = inc.groupby("match_id")["lower_bound_s"].sum() / 60
-    bd = board.groupby("match_id")["board_min"].sum()
+    played = pis.groupby("match_id")["played_in_stoppage_min"].sum()
     grp = matches.set_index("match_id")["group"]
-    df = pd.DataFrame({"lb": lb, "board": bd, "group": grp}).dropna()
+    df = pd.DataFrame({"lb": lb, "played": played, "group": grp}).dropna()
     fig, ax = plt.subplots(figsize=(6, 6))
     for g, c in (("PRE", "tab:blue"), ("POST", "tab:orange")):
         d = df[df["group"] == g]
-        ax.scatter(d["board"], d["lb"], s=14, alpha=0.6, label=g, color=c)
-    lim = max(df["board"].max(), df["lb"].max()) + 1
+        ax.scatter(d["played"], d["lb"], s=14, alpha=0.6, label=g, color=c)
+    lim = max(df["played"].max(), df["lb"].max()) + 1
     ax.plot([0, lim], [0, lim], "k--", lw=1, label="y=x")
-    ax.set_xlabel("board added time (min)")
+    ax.set_xlabel("time played in stoppage (min)")
     ax.set_ylabel("incident lower bound (min)")
-    ax.set_title("Lower bound vs board added time")
+    ax.set_title("Lower bound vs time played in stoppage")
     ax.legend()
     return _save(fig, "f04_lb_vs_board.png")
 
@@ -95,16 +98,17 @@ def fig_sensitivity():
     path = config.PROCESSED / "counterfactual_summary.parquet"
     if not path.exists():
         return None
+    hw = config.params()["counterfactual"]["headline_window"]
     s = pd.read_parquet(path)
-    s = s[s["group"] == "all"].sort_values("pct_changed")
+    s = s[(s["group"] == "all") & (s["window"] == hw)].sort_values("pct_changed")
+    xerr_lo = (s["pct_changed"] - s["ci_lo"]).clip(lower=0)
+    xerr_hi = (s["ci_hi"] - s["pct_changed"]).clip(lower=0)
     fig, ax = plt.subplots(figsize=(8, max(4, 0.3 * len(s))))
-    ax.errorbar(s["pct_changed"], range(len(s)),
-                xerr=[s["pct_changed"] - s["ci_lo"], s["ci_hi"] - s["pct_changed"]],
-                fmt="o", capsize=3)
+    ax.errorbar(s["pct_changed"], range(len(s)), xerr=[xerr_lo, xerr_hi], fmt="o", capsize=3)
     ax.set_yticks(range(len(s)))
     ax.set_yticklabels(s["knob_set"], fontsize=7)
-    ax.set_xlabel("% of matches changed")
-    ax.set_title("Counterfactual sensitivity grid (95% CI)")
+    ax.set_xlabel("P(>=1 extra goal) -- share of matches")
+    ax.set_title(f"Counterfactual sensitivity grid, window={hw} (95% CI)")
     return _save(fig, "f05_sensitivity_grid.png")
 
 
@@ -133,14 +137,41 @@ def write_ledger(prod):
 
     cf = config.PROCESSED / "counterfactual_summary.parquet"
     if cf.exists():
+        hw = config.params()["counterfactual"]["headline_window"]
         s = pd.read_parquet(cf)
-        allg = s[s["group"] == "all"]
+        allg = s[(s["group"] == "all") & (s["window"] == hw)].copy()
+        allg["silent"] = allg["knob_set"].str.split("|").str[0]
         lo, hi = allg["pct_changed"].min(), allg["pct_changed"].max()
+        central = "silent_marked|overall|pooled_all"
+        c = allg[allg["knob_set"] == central]
+        twoh = s[(s["group"] == "all") & (s["window"] == "2H_only") &
+                 (s["knob_set"] == central)]
         lines += [
-            "## Headline counterfactual (X%)",
-            f"- range across sensitivity grid: {lo:.1%} - {hi:.1%} "
-            "-> processed/counterfactual_summary.parquet (group=all)",
-            "- LOCK the chosen central knob_set + CI in docs/decisions.md before publishing.",
+            "## Headline counterfactual (X% = mean P[>=1 extra goal in omitted stoppage])",
+            f"- metric: mu = sum_h lambda_h * omitted_live_h; P(change)=1-exp(-mu); "
+            "X%=mean over matches (s08, ADR-0019). No Monte Carlo.",
+            f"- headline window: {hw}  (>=1 extra goal anywhere in omitted added time).",
+            f"- full grid range: {lo:.1%} - {hi:.1%} "
+            "-> processed/counterfactual_summary.parquet (group=all, window=" + hw + ")",
+        ]
+        if not c.empty:
+            r = c.iloc[0]
+            lines.append(
+                f"- central (silent_marked|overall|pooled_all): {r['pct_changed']:.1%} "
+                f"[CI {r['ci_lo']:.1%}, {r['ci_hi']:.1%}]")
+        if not twoh.empty:
+            lines.append(f"- same knob, 2H_only window (comparison): {twoh.iloc[0]['pct_changed']:.1%}")
+        lines.append("- X% by silent treatment (min-max across lambda conditioning/source):")
+        for lvl in ("silent_none", "silent_marked", "silent_all"):
+            sub = allg[allg["silent"] == lvl]
+            if sub.empty:
+                continue
+            lines.append(
+                f"  - {lvl}: {sub['pct_changed'].min():.1%} - {sub['pct_changed'].max():.1%}"
+            )
+        lines += [
+            "- X% is highly sensitive to the silent treatment -> it ships as a band, not a point.",
+            "- NOT YET LOCKED: lock the central knob_set + CI in docs/decisions.md after IMPL-7.",
             "",
         ]
     else:

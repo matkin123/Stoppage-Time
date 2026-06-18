@@ -27,10 +27,10 @@ STAGES = [
     ("03", "s03_bip", "Ball-in-play reconstruction (CALIBRATION GATE)"),
     ("04", "s04_goals_state", "Goals, stoppage flags, match state at 45/90"),
     ("05", "s05_incident", "Incident-stoppage lower bound"),
-    ("06a", "s06a_board", "Board added time (external source)"),
+    ("06a", "s06a_board", "Played-in-stoppage time (external source)"),
     ("06b", "s06b_var", "VAR review log (external + fallback)"),
     ("07", "s07_productivity", "Productivity & descriptive tables"),
-    ("08", "s08_counterfactual", "Counterfactual Monte Carlo (HEADLINE)"),
+    ("08", "s08_counterfactual", "Counterfactual headline (closed-form any-extra-goal)"),
     ("09", "s09_figures", "Figures & numbers ledger"),
 ]
 STAGE_BY_ID = {sid: (mod, desc) for sid, mod, desc in STAGES}

@@ -8,10 +8,11 @@ Also writes the measured stoppage live-share (feeds s08) and, if board data exis
 PRE-vs-POST board descriptives.
 
 In:  interim/{events_norm,goals,match_minutes,bip_segments,match_state,matches}.parquet
-     interim/board_added_time.parquet (optional)
+     interim/played_in_stoppage.parquet (optional)
 Out: processed/productivity.parquet, processed/stoppage_live_share.parquet,
-     processed/board_descriptive.parquet (if board data present)
-Gate: every productivity cell reports n_events and live_minutes alongside the rate.
+     processed/played_in_stoppage_descriptive.parquet (if data present)
+Gate: every productivity cell reports n_events and live_minutes alongside the rate;
+      stoppage live-share (1H + 2H) equals the match_minutes ledger live-seconds (DC1).
 """
 from __future__ import annotations
 
@@ -68,6 +69,41 @@ def _counts_by(df, key):
     }
 
 
+def stoppage_live_share(seg, tour_of, thr):
+    """Per-match live/total seconds in each added-time window {1H_stoppage, 2H_stoppage,
+    any_stoppage}, splitting each segment at the 45:00/90:00 boundary so a segment straddling
+    the mark contributes only its post-mark portion. This mirrors bip.allocate_live_seconds
+    (which feeds the productivity ledger via match_minutes), so the live-seconds here equal the
+    match_minutes stoppage live-seconds -- ONE exposure table for both lambda and productivity
+    (DC1). The old version keyed on the segment-START phase label, which mis-assigned every
+    boundary-straddling segment and undercounted 2H live (811 vs 894.5 team-min)."""
+    rows = []
+    for mid, g in seg.groupby("match_id"):
+        acc = {"1H_stoppage": [0.0, 0.0], "2H_stoppage": [0.0, 0.0]}  # [total_s, live_s]
+        for s in g.itertuples(index=False):
+            per = int(s.period)
+            if per not in (1, 2) or float(s.end_s) <= thr:
+                continue
+            dur = float(s.end_s) - max(float(s.start_s), thr)
+            if dur <= 0:
+                continue
+            win = "1H_stoppage" if per == 1 else "2H_stoppage"
+            acc[win][0] += dur
+            if s.in_play:
+                acc[win][1] += dur
+        a1, a2 = acc["1H_stoppage"], acc["2H_stoppage"]
+        for win, (tot, live) in (
+            ("1H_stoppage", a1), ("2H_stoppage", a2),
+            ("any_stoppage", [a1[0] + a2[0], a1[1] + a2[1]]),
+        ):
+            rows.append({
+                "match_id": mid, "tournament": tour_of.get(mid),
+                "phase": win, "stoppage_seconds": tot, "live_seconds": live,
+                "live_share": (live / tot) if tot > 0 else np.nan,
+            })
+    return pd.DataFrame(rows)
+
+
 def main() -> None:
     config.ensure_dirs()
     events = pd.read_parquet(config.INTERIM / "events_norm.parquet")
@@ -111,40 +147,42 @@ def main() -> None:
     productivity = pd.DataFrame(rows)
     productivity.to_parquet(config.PROCESSED / "productivity.parquet", index=False)
 
-    # --- measured stoppage live-share (feeds s08) ---
-    seg["dur"] = seg["end_s"] - seg["start_s"]
-    seg["tournament"] = seg["match_id"].map(matches.set_index("match_id")["tournament"])
-    share_rows = []
-    for (mid,), g in seg.groupby(["match_id"]):
-        for phase_label, mask in (
-            ("2H_stoppage", g["phase"] == "2H_stoppage"),
-            ("any_stoppage", g["phase"].isin(["1H_stoppage", "2H_stoppage"])),
-        ):
-            gg = g[mask]
-            tot = gg["dur"].sum()
-            live = gg[gg["in_play"]]["dur"].sum()
-            share_rows.append({
-                "match_id": mid, "tournament": g["tournament"].iloc[0],
-                "phase": phase_label, "stoppage_seconds": tot,
-                "live_seconds": live,
-                "live_share": (live / tot) if tot > 0 else np.nan,
-            })
-    live_share = pd.DataFrame(share_rows)
+    # --- measured stoppage live-share (feeds s08), split at the half boundary (DC1) ---
+    thr = p["phases"]["half_stoppage_s"]
+    tour_of = matches.set_index("match_id")["tournament"].to_dict()
+    live_share = stoppage_live_share(seg, tour_of, thr)
     live_share.to_parquet(config.PROCESSED / "stoppage_live_share.parquet", index=False)
-    pooled_share = live_share[live_share["phase"] == "2H_stoppage"]["live_share"].mean()
-    print(f"\n  measured 2H-stoppage live-share (pooled mean): {pooled_share:.3f}")
 
-    # --- board descriptive (optional) ---
-    board_path = config.INTERIM / "board_added_time.parquet"
-    if board_path.exists():
-        board = pd.read_parquet(board_path)
-        per_match = board.groupby(["match_id", "group"])["board_min"].sum().reset_index()
-        desc = per_match.groupby("group")["board_min"].agg(["mean", "median", "count"])
-        desc.to_parquet(config.PROCESSED / "board_descriptive.parquet")
-        print("  board added time PRE vs POST (min/match):")
+    # DC1: lambda exposure (live_share live-seconds) and productivity (match_minutes
+    # live-seconds) must come from ONE table. Assert they agree per (match, stoppage window).
+    canon = (live_share[live_share["phase"].isin(["1H_stoppage", "2H_stoppage"])]
+             .set_index(["match_id", "phase"])["live_seconds"])
+    ledger = (mm[mm["phase"].isin(["1H_stoppage", "2H_stoppage"])]
+              .groupby(["match_id", "phase"])["live_seconds"].sum())
+    keys = set(canon.index) | set(ledger.index)
+    max_diff = max((abs(float(canon.get(k, 0.0)) - float(ledger.get(k, 0.0))) for k in keys),
+                   default=0.0)
+    if max_diff > 1e-6:
+        raise SystemExit(
+            f"s07 DC1 FAILED: stoppage live-seconds disagree with match_minutes by {max_diff:.4f}s"
+        )
+    for win in ("1H_stoppage", "2H_stoppage"):
+        pooled = live_share[live_share["phase"] == win]["live_share"].mean()
+        print(f"\n  measured {win} live-share (pooled mean): {pooled:.3f}")
+    print(f"  DC1 OK: stoppage live-seconds == match_minutes ledger (max diff {max_diff:.2e}s)")
+
+    # --- played-in-stoppage descriptive (optional; DC2 rename of "board") ---
+    pis_path = config.INTERIM / "played_in_stoppage.parquet"
+    if pis_path.exists():
+        pis = pd.read_parquet(pis_path)
+        per_match = (pis.groupby(["match_id", "group"])["played_in_stoppage_min"]
+                     .sum().reset_index())
+        desc = per_match.groupby("group")["played_in_stoppage_min"].agg(["mean", "median", "count"])
+        desc.to_parquet(config.PROCESSED / "played_in_stoppage_descriptive.parquet")
+        print("  played-in-stoppage PRE vs POST (min/match):")
         print(desc.to_string())
     else:
-        print("  (board data absent -- run s06a to add PRE/POST board descriptives)")
+        print("  (played-in-stoppage data absent -- run s06a to add PRE/POST descriptives)")
 
     # ---- gate ------------------------------------------------------------
     bad = productivity[productivity["n_events"].isna() | productivity["live_minutes"].isna()]

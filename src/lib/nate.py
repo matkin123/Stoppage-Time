@@ -116,10 +116,15 @@ def regulation_bip_minutes() -> dict[int, float]:
 
 
 def board_total_minutes() -> dict[int, float]:
-    """Per-match total board (both regulation halves summed) from interim/board_added_time."""
-    b = pd.read_parquet(config.INTERIM / "board_added_time.parquet")
+    """Per-match total time PLAYED in stoppage (both regulation halves summed).
+
+    Reads interim/played_in_stoppage.parquet (DC2 rename; ADR-0019). The quantity and the
+    numbers are unchanged from the old board_added_time/board_min source -- this is the
+    time-played `actual` arm validated at r=0.992 -- only the file/column names changed.
+    """
+    b = pd.read_parquet(config.INTERIM / "played_in_stoppage.parquet")
     b = b[b["period"].isin([1, 2])]
-    return {int(m): float(v) for m, v in b.groupby("match_id")["board_min"].sum().items()}
+    return {int(m): float(v) for m, v in b.groupby("match_id")["played_in_stoppage_min"].sum().items()}
 
 
 def report(pred_min: dict[int, float], column: str, label: str) -> dict:

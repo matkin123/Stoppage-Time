@@ -7,7 +7,7 @@ These prove the scaffolding the IMPL sessions depend on is correct BEFORE any of
      MAE 0.135 min from ADR-0011) -- so a green test here means the data, the reconciliation,
      and the metric are all wired correctly.
 
-Tests 1-2 need no pipeline outputs. Test 3 needs interim/board_added_time.parquet; it skips
+Tests 1-2 need no pipeline outputs. Test 3 needs interim/played_in_stoppage.parquet; it skips
 (rather than fails) if that file is absent, so the harness can be developed without data.
 """
 import math
@@ -44,8 +44,8 @@ def test_harness_reproduces_validated_board_fit():
     pytest.importorskip("pandas")
     from src.lib import config
 
-    if not (config.INTERIM / "board_added_time.parquet").exists():
-        pytest.skip("board_added_time.parquet not built; run s06a first")
+    if not (config.INTERIM / "played_in_stoppage.parquet").exists():
+        pytest.skip("played_in_stoppage.parquet not built; run s06a first")
     if not (config.INTERIM / "matches.parquet").exists():
         pytest.skip("matches.parquet not built")
 

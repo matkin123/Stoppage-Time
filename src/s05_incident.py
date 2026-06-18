@@ -1,10 +1,11 @@
-"""s05 -- Incident-stoppage lower bound.
+"""s05 -- Incident-stoppage lower bound + true-stoppage estimator.
 
 Per match & half, sums identifiable dead-time windows:
-  celebration  goal -> next kick-off
-  sub          Player Off / Substitution -> next restart
-  card         Foul Committed w/ card or Bad Behaviour -> next restart
-  injury       Injury Stoppage -> Referee Ball-Drop
+  celebration     goal -> next kick-off
+  sub             Player Off / Substitution -> next restart
+  card            Foul Committed w/ card or Bad Behaviour -> next restart
+  injury          Injury Stoppage -> Referee Ball-Drop
+  restart_excess  routine restart-boundary gap, EXCESS over Nate's allowance (IMPL-5)
 Each window is clipped to a sane max (params.yaml). lower_bound_s is the UNION of all
 incident windows (merged, so overlapping windows are not double counted) INTERSECTED with
 s03's measured dead segments -- so we only credit identifiable dead time the independent
@@ -14,15 +15,36 @@ s06b. Matches lacking any Injury Stoppage event are flagged (StatsBomb populates
 inconsistently). All coordinates are within-period seconds (period_s) to line up with
 bip_segments.
 
+restart_excess (IMPL-5, ADR-0017) credits routine restart time-wasting -- a throw-in dragged
+to 50s, a goal kick to 40s with no foul/sub/injury -- which silent.py skips (it EXCLUDES
+restart-boundary gaps by design). For each routine restart we credit max(0, gap - allowance)
+as the tail interval [last + allowance, restart] (allowances in params.yaml:incident.
+restart_normal_s). It is identifiable (restart-tagged), so it folds into the lower_bound union
+and rides through the same intersect-with-dead machinery (deduped against card/sub, gate true
+by construction). lower_bound_base_s keeps the ADR-0016 lower bound (without restart_excess)
+for the ablation.
+
+The TRUE-STOPPAGE estimator adds a marker-gated silent term on top of the lower bound: of the
+>= silent.min_silent_gap_s non-restart gaps, credit ONLY those whose lead edge carries an
+out-of-play marker (src/lib/silent.py) -- the unmarked silent gaps are genuinely dead (s03 BIP
+keeps them) but a flat ~8.4 min/match non-addable baseline. A residual-silent constant frozen
+on 2018 (re-fit in IMPL-5 after adding restart_excess) closes the irreducible remainder. The
+estimator validates against Nate Silver's `expected` column (WC2018); s03/bip.py are NOT
+touched (they stay the validated duration rule -- BIP = TOTAL dead time, stoppage = ADDABLE).
+
 In:  interim/events_norm.parquet, interim/bip_segments.parquet
-Out: interim/incident_stoppage.parquet
-Gate: lower_bound_s <= total dead time (s03) for every match.
+Out: interim/incident_stoppage.parquet (per match-period; adds restart_excess_s, the
+     lower_bound_base_s ablation column, silent_marked_s + the ungated silent_all_s upper
+     bound for IMPL-4's sensitivity grid),
+     interim/true_stoppage.parquet (per match: lower_bound + marked silent + residual)
+Gate: lower_bound_s <= total dead time (s03) for every match; estimator r>=~0.77 vs Nate
+      `expected` on the 32 WC2018 matches (IMPL-5: r=0.825, MAE 2.44).
 """
 from __future__ import annotations
 
 import pandas as pd
 
-from src.lib import config
+from src.lib import config, nate, silent
 
 RESTART = {
     "From Throw In", "From Corner", "From Free Kick",
@@ -72,7 +94,11 @@ def _intersect_total(a: list[tuple[float, float]], b: list[tuple[float, float]])
 
 def main() -> None:
     config.ensure_dirs()
-    p = config.params()["incident"]
+    params = config.params()
+    p = params["incident"]
+    sil = params["silent"]
+    restart_set = set(params["bip"]["restart_play_patterns"])
+    allowance = {str(k): float(v) for k, v in p["restart_normal_s"].items()}
     events = pd.read_parquet(config.INTERIM / "events_norm.parquet")
     seg = pd.read_parquet(config.INTERIM / "bip_segments.parquet")
     seg["dur"] = seg["end_s"] - seg["start_s"]
@@ -91,10 +117,11 @@ def main() -> None:
             clocks = g["period_s"].to_numpy()
             patterns = g["play_pattern"].fillna("").to_numpy()
             types = g["type"].fillna("").to_numpy()
+            poss = g["possession"].to_numpy()
             cards = g["card"].notna().to_numpy()
             shot_out = g["shot_outcome"].fillna("").to_numpy()
 
-            comp = {"celebration": [], "sub": [], "card": [], "injury": []}
+            comp = {"celebration": [], "sub": [], "card": [], "injury": [], "restart_excess": []}
             injury_present = False
             for i in range(len(clocks)):
                 t0 = float(clocks[i])
@@ -121,8 +148,29 @@ def main() -> None:
                     if r is not None:
                         comp["injury"].append((t0, min(r, t0 + p["max_injury_s"])))
 
-            all_intervals = sum(comp.values(), [])
+            # restart time-wasting (IMPL-5): on a routine restart-boundary gap, credit only the
+            # EXCESS over Nate's allowance -- the tail [last + allow, restart]. Mirrors the
+            # restart-boundary test silent.py uses to EXCLUDE these gaps, so the two never
+            # overlap. Folds into the union below; the intersect dedups it against card/sub.
+            for i in range(len(clocks) - 1):
+                if poss[i + 1] != poss[i] and patterns[i + 1] in allowance:
+                    gap = float(clocks[i + 1]) - float(clocks[i])
+                    allow = allowance[patterns[i + 1]]
+                    if gap > allow:
+                        comp["restart_excess"].append((float(clocks[i]) + allow, float(clocks[i + 1])))
+
+            base_intervals = comp["celebration"] + comp["sub"] + comp["card"] + comp["injury"]
+            all_intervals = base_intervals + comp["restart_excess"]
             dead = dead_seg.get((int(mid), int(period)), [])
+            # marker-gated silent term (>= silent.min_silent_gap_s non-restart gaps whose
+            # lead edge is marked out-of-play). These gaps are >= 20s, so already dead in s03
+            # by the max-live-gap rule -- summed directly (each gap is one dead segment).
+            silent_iv = silent.marked_silent_intervals(g, restart_set, sil)
+            silent_marked_s = sum(t1 - t0 for t0, t1 in silent_iv)
+            # ungated upper bound (every silent gap credited) -- the `silent_all` knob
+            # IMPL-4's sensitivity grid uses to bracket the irreducible silent uncertainty.
+            silent_all_iv = silent.all_silent_intervals(g, restart_set, sil)
+            silent_all_s = sum(t1 - t0 for t0, t1 in silent_all_iv)
             rows.append(
                 {
                     "match_id": mid,
@@ -131,7 +179,14 @@ def main() -> None:
                     "sub_s": _intersect_total(comp["sub"], dead),
                     "card_s": _intersect_total(comp["card"], dead),
                     "injury_s": _intersect_total(comp["injury"], dead),
+                    "restart_excess_s": _intersect_total(comp["restart_excess"], dead),
+                    "silent_marked_s": float(silent_marked_s),
+                    "silent_all_s": float(silent_all_s),
                     "var_s": 0.0,  # filled by s06b
+                    # lower_bound_base_s = the ADR-0016 lower bound (celebration/sub/card/injury);
+                    # lower_bound_s adds restart_excess (IMPL-5). Both are deduped unions ∩ dead,
+                    # so net restart credit = lower_bound_s - lower_bound_base_s (after overlap).
+                    "lower_bound_base_s": _intersect_total(base_intervals, dead),
                     "lower_bound_s": _intersect_total(all_intervals, dead),
                     "injury_present": injury_present,
                 }
@@ -139,6 +194,30 @@ def main() -> None:
 
     inc = pd.DataFrame(rows)
     inc.to_parquet(config.INTERIM / "incident_stoppage.parquet", index=False)
+
+    # ---- true-stoppage estimator (per match) ----------------------------
+    # lower_bound (incl. restart_excess, IMPL-5) + marker-gated silent + residual constant
+    # (re-fit + frozen on 2018, ADR-0017).
+    residual_s = float(sil["residual_silent_s"])
+    g_match = inc.groupby("match_id")[
+        ["lower_bound_base_s", "lower_bound_s", "silent_marked_s"]
+    ].sum()
+    ts = g_match.reset_index()
+    ts["residual_silent_s"] = residual_s
+    ts["true_stoppage_s"] = ts["lower_bound_s"] + ts["silent_marked_s"] + residual_s
+    ts.to_parquet(config.INTERIM / "true_stoppage.parquet", index=False)
+
+    # ---- validation vs Nate `expected` (WC2018 only) --------------------
+    lb_base_min = {int(m): v / 60.0 for m, v in g_match["lower_bound_base_s"].items()}
+    lb_min = {int(m): v / 60.0 for m, v in g_match["lower_bound_s"].items()}
+    ms_min = {int(m): v / 60.0 for m, v in g_match["silent_marked_s"].items()}
+    lbms = {m: lb_min[m] + ms_min[m] for m in lb_min}
+    est = {m: lbms[m] + residual_s / 60.0 for m in lb_min}
+    print("\n  IMPL-5 ablation vs Nate `expected` (32 WC2018 matches):")
+    nate.report(lb_base_min, "expected", "lower_bound (celeb/sub/card/injury)")
+    nate.report(lb_min, "expected", "+ restart_excess")
+    nate.report(lbms, "expected", "+ marker-gated silent")
+    nate.report(est, "expected", "+ residual constant (estimator)")
 
     # ---- gate: lower bound <= total dead per match -----------------------
     per_match = inc.groupby("match_id")["lower_bound_s"].sum()

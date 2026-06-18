@@ -54,6 +54,10 @@ def _normalize_match(match_id: int, events: list[dict]) -> pd.DataFrame:
                     (e.get("foul_committed") or {}).get("card", {}).get("name")
                     or (e.get("bad_behaviour") or {}).get("card", {}).get("name")
                 ),
+                # out-of-play markers for the marker-gated silent reclassifier (IMPL-1):
+                "pass_outcome": ((e.get("pass") or {}).get("outcome") or {}).get("name"),
+                "gk_type": ((e.get("goalkeeper") or {}).get("type") or {}).get("name"),
+                "gk_outcome": ((e.get("goalkeeper") or {}).get("outcome") or {}).get("name"),
             }
         )
     df = pd.DataFrame(recs)

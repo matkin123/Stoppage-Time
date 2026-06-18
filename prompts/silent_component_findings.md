@@ -148,6 +148,13 @@ VAR event type, and the absence of free per-match Opta BIP are established facts
 
 ## Design decision (DECIDED 2026-06-15): one ball-state classifier, in bip.py
 
+> **SUPERSEDED 2026-06-15 (ADR-0014 + ADR-0015).** The "one classifier in bip.py" decision below
+> was FALSIFIED in IMPL-2: marker-gating regresses the validated BIP (r 0.943→≤0.92) because BIP
+> needs the unmarked silent gaps (they are genuinely dead). BIP = TOTAL dead; stoppage = ADDABLE
+> dead — different questions, different definitions. `bip.py`/s03 stay the validated duration rule;
+> marker-gating is applied ONLY to the s05 stoppage silent term (IMPL-3). The text below is
+> retained for history — do NOT implement it.
+
 The marker-gating reclassification changes which gaps count as dead, and those dead segments feed
 **both** s03 BIP and s05 true-stoppage. We are improving the live/dead methodology, so the
 improvement belongs **everywhere**: marker-gating becomes THE classifier in `src/lib/bip.py`,

@@ -19,7 +19,8 @@ def test_tournament_checksums_consistent():
 
 def test_params_load():
     p = config.params()
-    assert p["counterfactual"]["n_sims"] == 10000
+    assert p["counterfactual"]["n_bootstrap"] == 1000
+    assert p["counterfactual"]["headline_window"] == "1H+2H"
     assert set(p["bip"]["restart_play_patterns"]) >= {"From Throw In", "From Corner"}
 
 

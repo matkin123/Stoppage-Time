@@ -3,19 +3,130 @@
 Read `CLAUDE.md §6` first: **one self-contained unit per session, then stop.** Do not chain
 these items into one marathon session.
 
+**AUTHORITATIVE POINTER (2026-06-18) — HEADLINE MODEL REDESIGN IN FLIGHT; X% LOCK STILL PAUSED.**
+Full spec: **`docs/redesign.md`**. **IMPL-6 DONE — RATIFIED 2026-06-18 (ADR-0019).** The closed-form
+any-extra-goal remodel is built and validated (see ADR-0019 for the grid + the TWO-TEAM-rate trap):
+W/D/L Monte Carlo replaced by `mu = sum_h lambda_h * omitted_live_h`, `P(change)=1-exp(-mu)`,
+`X%=mean(P(change))`; team_role dropped; λ pooled (added `pooled_all`); 1H window plumbed; board
+RENAMED to played_in_stoppage (+ NULL `board_announced` for R1); DC1 live-minute denominator
+reconciled (811→894.5, asserts to 0.00s); DC3 f01 regulation-only. **24 pytest green; s07→08→09
+re-run.** New grid (central `silent_marked|overall|pooled_all`): **1H+2H X=23.8% [20.4%, 27.9%]**,
+2H_only 17.1%; full grid 12.5–36.4%; silent bands none 12.5–14.9% / marked 22.6–26.1% / all
+32.1–36.4%; monotone none≤marked≤all in all 144 cells. **X% is deliberately NOT LOCKED** (CLAUDE.md
+§6 — lock is the final session, after IMPL-7).
+
+**POST-IMPL-6 DECISIONS RATIFIED 2026-06-18 (ADR-0021) — metric framing + the band the lock SELECTS.**
+After the user reasoned through the closed form from first principles (why 23.8% is not a bug — the
+live_share cancels in mu, so X% ≈ stoppage goals × omitted/played CLOCK ratio, both Nate-validated),
+four decisions are locked into the SPEC (not the number): (1) **Headline = different SCORELINE**
+(≥1 extra goal; central 23.8%, 1H+2H) and ALSO report the stricter "different OUTCOME" (winner/draw
+flips, ≈12.7% illustrative). (2) **Productivity-premium BAND** is committed: UPPER = observed
+stoppage λ (today) 23.8% / 2H 17.1%; LOWER = open-play λ (`productivity[phase=regular]`≈0.0427) on
+omitted minutes 16.3% / 2H 9.7% → honest band ≈16–24%, truth nearer the top. (3) **O3 in-stoppage
+time-wasting gross-up** — implement faithfully even though it RAISES X% (no agenda). (4) **First-goal
+hazard — do NOT overengineer**: `P(≥1)=1−P(0)` already only uses the pre-first-goal hazard, and the
+open-play floor brackets it. These BUILD in **IMPL-7 Part C** so the final session just SELECTS rails.
+Full rationale: `docs/decisions.md` ADR-0021 + `docs/redesign.md` ADDENDUM. **X% still NOT LOCKED.**
+
+**Current unit = R2 (deferred research), THEN IMPL-7, THEN the final LOCK.** (R1 DONE 2026-06-18.)
+- R1 — announced-board sourcing: **DONE 2026-06-18 (ADR-0020).** YES, free for all six via SofaScore
+  incidents API (`injuryTime.length` per half). Findings: `prompts/research_board_findings.md`;
+  memory `reference_board_announced.md`. `board_announced` is no longer NULL — wire in IMPL-7.
+- R2 — cooling-break policy/detection (expert-quant): **`prompts/research_cooling.md`**.
+- IMPL-7 — board distortions + cooling stoppage + **Part C: build the ADR-0021 band** (productivity
+  rails, O3 gross-up, outcome-flip secondary), after R1/R2: **`prompts/impl_7_board_cooling.md`**.
+- Final session — lock X% + CI + sensitivity band in `docs/decisions.md`, eyes open (just SELECT rails).
+Each is self-contained; **`docs/redesign.md`** is the full spec. R1/R2 are research-only (no code).
+**Everything below this line is HISTORY (IMPL-0→IMPL-6, all DONE).**
+
 **AUTHORITATIVE POINTER (2026-06-15):** Items 1 and 2 are DONE. The silent-component research
 has been run; findings are in `prompts/silent_component_findings.md` (reviewed). **IMPL-0
-(validation scaffolding) is DONE** (see below). The current work is the **implementation of the
-recommended fix**, decomposed into the modular sessions **IMPL-1 → IMPL-4 below**. Start at
-**IMPL-1**. Each session does ONE unit, validates its gate, checkpoints to `docs/decisions.md` +
-this file, then stops.
+(validation scaffolding) is DONE** (see below). **IMPL-1 (plumb out-of-play markers through s02)
+is DONE** (2026-06-15 — see ADR-0013).
+
+**IMPL-2 CLOSED — RATIFIED 2026-06-15 (ADR-0014 + ADR-0015): do NOT promote marker-gating into
+`bip.py`. `bip.py` stays the validated duration rule. Marker-gating is applied ONLY to the s05
+stoppage silent term (that is IMPL-3).** Built the marker-gated reclassifier (`src/lib/silent.py`,
+kept but UNWIRED) and tried promoting it into `bip.py`; the promote-gate cannot be met —
+marker-gating REGRESSES validated BIP (r 0.943→≤0.92, MAE 1.25→4.0) because 538's WC2018 BIP
+(55.3) is BELOW the old duration rule (56.0): the long silent gaps are GENUINELY dead and only 25%
+carry a marker. Reverted `bip.py`/`s03_bip.py`/`params.yaml`/`tests` to the ADR-0013 baseline
+(s03 green at 3460s). The "one shared classifier in bip.py" hypothesis is FALSIFIED and abandoned.
+
+**Why marker-gating IS the right tool for s05 (not BIP).** BIP = TOTAL dead time; stoppage =
+ADDABLE dead time — genuinely different questions. The marker test splits the silent bucket:
+`silent_marked` correlates r=0.71 with Nate `expected`, `silent_unmarked` only r=0.25 (a flat
+~8.4 min/match baseline). The old estimator over-counts because it credits the unmarked flat
+baseline as addable stoppage (`lb + all silent` → mean 19.7, the Germany-Sweden 17.4 signature).
+Marker-gating the SILENT TERM fixes it: `lb + marked silent` r=0.768 MAE 3.15; `marked silent +
+calibrated const` MAE 2.22, mean 13.2.
+
+**External data (Wyscout/FIFA/CIES/tracking) — DECLINED for the silent-component goal (ADR-0015).**
+Wyscout's explicit interruption events label ball-out timing (the BIP axis, already r=0.943), not
+addable-ness (the hard part); it covers WC2018 only (duplicates Nate) and never the POST
+tournaments the headline depends on. Survey saved to memory `reference_external_datasets.md` as a
+triangulation footnote, not a model input.
+
+**IMPL-3 DONE — RATIFIED 2026-06-16 (ADR-0016).** Built the marker-gated true-stoppage estimator
+in s05 (`bip.py`/s03 untouched, verified): `lower_bound + marker-gated silent + residual constant`.
+Validated vs Nate `expected` (32 WC2018): ablation lower_bound r=0.655 → +marked silent r=0.768
+(MAE 3.15, mean 11.26) → +residual r=0.768 (MAE 2.75, mean 13.16 ≈ Nate 13.16). **Gate met** (beat
+0.61–0.73 baseline, hit reset ~0.77 target). Diagnostic: vs the old over-counter the LOW matches
+collapse (Germany–Sweden +10.9→+3.3, Russia–Egypt +6.9→−0.7, Uruguay–Saudi +7.5→+0.9) while HIGH
+hold (Belgium–Panama +0.2, Tunisia–England +3.3). Residual constant `silent.residual_silent_s=114.0`
+(1.9 min) FROZEN in params, fit on 2018, applied to all six. New artifact
+`interim/true_stoppage.parquet` (per match); `silent_marked_s` added to `incident_stoppage.parquet`.
+**Coverage flag:** Nate is WC2018-only; POST validated indirectly via the frozen 2018 calibration +
+s03 WC2022 Opta BIP gate.
+
+**IMPL-4 SETUP DONE (2026-06-16) — data + plumbing staged so IMPL-4 is turnkey:**
+- `incident_stoppage.parquet` now ALSO carries `silent_all_s` (ungated upper bound, ~2837 min total
+  vs 1344 marked) — the data source for the `silent_all` knob. `var_s` repopulated (s06b re-run, my
+  s05 re-run had reset it to 0).
+- `params.yaml:silent` now exposes `estimator_pearson_r: 0.768` and `estimator_mae_min: 2.75` for
+  IMPL-4's CI propagation.
+- New guard tests (`tests/test_pipeline.py`): `test_s05_silent_marked_within_all`,
+  `test_s05_true_stoppage_estimator`. **All 22 tests green.**
+- `prompts/impl_4_counterfactual_lock.md` now has a Handoff + Gotchas section: exact columns, the
+  s08 `true_stoppage_minutes` (~line 134) + `true_stoppage_knobs` list to rewire, and the key
+  LANDMINE — s08 is a 2H-only (period 2) frame but the residual (114s) / MAE (2.75) were fit on
+  FULL-MATCH totals vs Nate, so they must be scaled to the 2H frame, not bolted on raw.
+
+**IMPL-4 CODED + TESTED but X% deliberately UNLOCKED (2026-06-16).** The silent-treatment knob
+(`silent_none`/`silent_marked`/`silent_all`) is wired into s08, the ~±2.75 min estimator MAE is
+2H-scaled and propagated into the `silent_marked` CI, s09 + ledger updated, new guard test added
+(23 green, all gates green). The grid answered the decisive question — **X% is NOT robust to the
+silent assumption:** silent_none 2.9–4.0%, silent_marked 7.4–9.9%, silent_all 9.6–12.7% (it
+roughly triples). A headline that swings 3%→12% cannot be locked, so we go back and improve the
+per-match estimator FIRST. IMPL-4 stays coded-but-unlocked; re-run it AFTER IMPL-5.
+
+**IMPL-5 DONE — RATIFIED 2026-06-17 (ADR-0017).** Made the s05 estimator more precise by folding
+**restart-excess** (Nate's allowances: throw-in 20s / goal-kick 30s / corner 45s / free-kick 60s,
+credit `max(0, gap−allowance)`) into `lower_bound`. **Task A KEPT, Task B (marker refinements)
+DROPPED** — no lead-window/trail-edge variant beat the bar (lead-window over-credits and re-inflates
+Germany–Sweden; trail-edge gating drops r below 0.768). `silent.py` UNCHANGED; bip.py/s03 FROZEN.
+Validated vs Nate `expected` (32 WC2018): ablation lower_bound r=0.655 → +restart_excess r=0.754 →
++marked silent r=0.825 (MAE 2.49) → +residual **r=0.825 / MAE 2.44, mean 13.16** — beats ADR-0016's
+0.768 / 2.75 on BOTH axes. Diagnostic holds (LOW shrinks, HIGH holds). Re-fit + froze on 2018:
+`incident.restart_normal_s` (NEW), `silent.residual_silent_s` 114.0→24.2, `estimator_pearson_r`
+0.768→0.825, `estimator_mae_min` 2.75→2.44. New cols `restart_excess_s`/`lower_bound_base_s` on
+incident parquet; s06b re-run to restore `var_s`; **all 23 pytest green.** **Honest finding:**
+restart_excess raises the `silent_none` FLOOR but does NOT narrow the `marked`↔`all` band — the
+silent uncertainty is irreducible with free StatsBomb data, so X% likely still ships as a band.
+
+**IMPL-4 RE-RUN — SUPERSEDED BY THE REDESIGN (2026-06-17, ADR-0018).** The s08 grid was re-run with
+the tighter estimator (silent_marked ~8.1–9.9%) but X% was NOT locked: the user reopened the model at
+first principles (metric → any-extra-goal, drop team_role, pool λ, add the 1H window, rename board).
+The old W/D/L-flip s08 is being replaced in IMPL-6. See `docs/redesign.md` + ADR-0018. Do NOT re-run
+the old s08 to lock; do IMPL-6 instead.
 
 **Turnkey prompts (open a fresh session and run one):**
-- `prompts/impl_1_plumb_markers.md`      → IMPL-1
-- `prompts/impl_2_reclassify_bip.md`     → IMPL-2
-- `prompts/impl_3_estimator_validate.md` → IMPL-3
-- `prompts/impl_4_counterfactual_lock.md`→ IMPL-4
-Each is self-contained; the per-session detail below is the same content in one place.
+- `prompts/research_board.md`        → R1 (DONE 2026-06-18, ADR-0020 — SofaScore; see research_board_findings.md)
+- `prompts/research_cooling.md`      → R2 (CURRENT — cooling-break policy/detection; expert-quant)
+- `prompts/impl_7_board_cooling.md`  → IMPL-7 (after R1/R2 — distortions + cooling stoppage)
+- `prompts/impl_6_remodel.md`        → IMPL-6 (DONE 2026-06-18, ADR-0019 — core remodel)
+- `prompts/impl_1..3, impl_5, impl_4_counterfactual_lock` → IMPL-0→IMPL-5 (DONE — history)
+Each is self-contained; **`docs/redesign.md`** is the full spec the IMPL prompts execute.
 
 ---
 
@@ -201,32 +312,28 @@ This implements the reviewed recommendation in `prompts/silent_component_finding
 The two human checkpoints are **IMPL-3** (estimator vs Nate — decide the per-match method) and
 **IMPL-4** (s08 sensitivity grid — lock X%).
 
-### Methodology decision (DECIDED 2026-06-15): ONE ball-state classifier, in bip.py
-We are improving how the project decides live-vs-dead, so the improvement belongs **everywhere**:
-the marker-gating logic becomes THE classifier in `src/lib/bip.py`, and both BIP and the
-true-stoppage estimator read from it. Two different live/dead definitions would be incoherent and
-untraceable. This is NOT collapsing BIP and stoppage into one number — true stoppage stays
-`dead − normal-restart-excess + injury/sub/goal credit` in s05, layered on top of the shared
-classifier.
+### Methodology decision (REVISED 2026-06-15, ADR-0015): TWO definitions — bip.py unchanged, marker-gating in s05 only
+The "one shared classifier in bip.py" idea (originally DECIDED here) was FALSIFIED in IMPL-2 and is
+abandoned. BIP and stoppage answer DIFFERENT questions: BIP = TOTAL dead time (it needs the
+unmarked silent gaps, which are genuinely dead — 538's WC2018 BIP 55.3 < the duration rule's 56.0);
+stoppage = ADDABLE dead time (it must EXCLUDE the flat unmarked baseline). One classifier cannot
+serve both: marker-gating BIP regresses it (r 0.943→≤0.92).
 
-**Why promoting into bip.py is safe (not a re-litigation of the validated BIP):** the silent
-over-count is the SAME absolute seconds in both metrics. On BIP (~55 min base) it's a ~15%
-perturbation → r stayed at 0.94 despite the flaw. On stoppage (~13 min base) the same seconds are
-~65% → r collapsed to 0.73. Marker-gating removes those seconds from both: a small nudge UP on BIP
-(toward 538's truth) and a big jump on stoppage. A correct classifier improves both; if it ever
-improves stoppage while regressing BIP, the marker logic is WRONG — stop and debug, do not ship.
-
-**The one guardrail — re-calibration, not "don't touch":** s03's gap constants
-(`min_dead_gap_s`/`max_live_gap_s`) were tuned to hit Opta's WC2022 3484s. Marker-gating moves
-seconds dead→live, so pooled BIP will rise and likely breach the ±90s gate on first run. That is
-EXPECTED → **re-tune** (you may not need `max_live_gap_s` at all once markers do the work). Promote
-to bip.py only when, after re-tuning: WC2022 pooled BIP hits Opta ±90s AND per-match BIP r vs 538
-holds ≥ 0.94. If you cannot get BIP to re-validate, that is a red flag about the marker logic — do
-NOT fall back to a quiet estimator-only patch; bring it to the user.
+**Decision:** `src/lib/bip.py` STAYS the validated duration rule (ADR-0003/0013) — s03 untouched,
+do not re-tune. Marker-gating (`src/lib/silent.py`) is applied ONLY to the s05 stoppage silent
+term (IMPL-3). The findings doc's §"DECIDED: one classifier in bip.py" is superseded — see the
+note now in that file.
 
 ---
 
-### IMPL-1 — Plumb out-of-play markers through s02 normalization (data prep; low risk)
+### IMPL-1 — DONE (2026-06-15). Out-of-play markers plumbed through s02. See ADR-0013.
+
+**Outcome:** added `pass_outcome`, `gk_type`, `gk_outcome` to `interim/events_norm.parquet`
+(`out` was already there). s02 gate PASSED; s03 BIP UNCHANGED (3460s, share 0.569) — columns not
+yet consumed. Spot-check across all six tournaments confirmed the same populated schema; key
+finding for IMPL-2: the `out` flag lands mostly on Block/Clearance/Miscontrol and is sparse, so
+the marker set must OR `out` with `pass_outcome="Out"` (5,471 rows) etc., not rely on `out` alone.
+Next: **IMPL-2** (`prompts/impl_2_reclassify_bip.md`).
 
 **Goal:** make the disambiguating fields available downstream without changing any behavior yet.
 
@@ -255,74 +362,52 @@ spot-check). Update this file: mark IMPL-1 DONE, point to IMPL-2. STOP.
 
 ---
 
-### IMPL-2 — Marker-gated silent reclassification → promote into bip.py (the one classifier)
+### IMPL-2 — DONE/CLOSED (2026-06-15, ADR-0014 + ADR-0015). Marker-gated reclassifier built; NOT promoted into bip.py.
 
-**Goal:** build the reclassifier that decides, per ≥`min_silent_gap_s` gap, dead vs live using
-the markers; prove it in isolation; then make it THE live/dead classifier in `src/lib/bip.py`
-(re-tuned), feeding both BIP and the estimator. See the Methodology decision above.
+**Outcome:** built `src/lib/silent.py` (the marker test, kept but UNWIRED) and tried promoting it
+into `bip.py` as the shared live/dead classifier. The promote-gate could not be met — marker-gating
+REGRESSES validated BIP (r 0.943→≤0.92, MAE 1.25→4.0) because 538's WC2018 BIP (55.3) is BELOW the
+duration rule's 56.0: the long silent gaps are genuinely dead and only ~25% carry a marker. Per the
+prompt's STOP instruction, reverted `bip.py`/`s03_bip.py`/`params.yaml`/`tests` to the ADR-0013
+baseline (s03 green at 3460s). The follow-up investigation (decomposing dead time into restart /
+silent_marked / silent_unmarked) proved the marker test is the right tool for the s05 stoppage term,
+not for BIP. **Decision ratified by the user:** abandon the bip.py promotion; apply marker-gating
+ONLY in s05 (IMPL-3). `silent.py` is ready to be consumed by s05. See ADR-0014/0015 for the full
+diagnostic and the marker set.
 
-**Do:**
-- Implement a function (suggest `src/lib/silent.py`) that, given a match's normalized events,
-  classifies each candidate silent gap (a gap with no restart pattern at its trail edge and
-  ≥ threshold) as **dead** iff its lead edge carries an out-of-play marker — any of:
-  `out=True`; `pass_outcome` ∈ {"Out","Injury Clearance"}; a shot leaving the field
-  (`shot_outcome` ∈ {"Off T","Saved Off T","Wayward","Blocked","Goal"}); `type` ∈
-  {"Foul Committed","Offside","Bad Behaviour","Substitution","Player Off","Injury Stoppage",
-  "Referee Ball-Drop","Half End"} — **else live**.
-- Special-case (B): a `gk_type` ∈ {"Collected","Smother","Pick-up"} with **no** subsequent
-  `out` before the next touch ⇒ keeper holding a LIVE ball ⇒ gap is live (do not credit).
-- Add the threshold + the marker set to `params.yaml` (e.g. `silent.min_silent_gap_s`,
-  `silent.out_of_play_types`) — deterministic, pinned, documented.
-- **Promote into `bip.py`:** replace the `gap >= max_live_gap_s` silent rule (`bip.py:60`) with
-  the marker-gated classifier so BIP and the estimator share ONE live/dead definition. Then
-  **re-tune** the s03 calibration: marker-gating moves seconds dead→live, so pooled WC2022 BIP
-  will rise — adjust/remove the residual gap constant until the gate passes. A first-run breach
-  is expected (re-tune), not a failure.
-
-**Gate (promotion is allowed only when BOTH external gates hold after re-tuning):**
-- **s03 BIP must re-validate, not just survive:** WC2022 pooled regulation BIP within ±90s of
-  3484s; in-play share 55–60%; AND per-match BIP r vs 538 holds ≥ 0.94 (do not regress the
-  validated number). If BIP cannot re-validate → STOP, the marker logic is suspect, bring it to
-  the user. Do NOT fall back to an estimator-only patch.
-- Print, per WC2018 match, the OLD silent total vs the NEW (marker-gated) silent total; confirm
-  the new totals **drop most** on the low-injury matches (Germany–Sweden, Russia–Egypt,
-  Uruguay–Saudi) and **barely move** on the injury-dominated ones (Belgium–Panama,
-  Tunisia–England). This is the smell test before the full IMPL-3 validation.
-
-**Checkpoint:** ADR (reclassifier logic, marker set, the re-tuned s03 constant + before/after
-BIP-vs-538 and Opta numbers). Update this file: mark IMPL-2 DONE, point to IMPL-3. STOP.
+Next: **IMPL-3** (`prompts/impl_3_estimator_validate.md`).
 
 ---
 
-### IMPL-3 — Rebuild true-stoppage estimator + validate vs Nate (HUMAN CHECKPOINT)
+### IMPL-3 — DONE (2026-06-16, ADR-0016). Estimator built in s05, r=0.768 / MAE 2.75 vs Nate `expected`. Next: IMPL-4.
 
-**Goal:** rebuild true-stoppage as
-`restart-excess + marker-gated-silent + calibrated-residual + explicit injury/sub/goal credit`,
-freeze the residual constant on 2018, and validate against Nate's 32 WC2018 matches.
+**Goal:** build the corrected true-stoppage estimator **in s05** (NOT bip.py) as
+`lower-bound credit + marker-gated-silent + calibrated-residual + explicit injury/sub/goal credit`,
+freeze the residual constant on 2018, and validate against Nate's 32 WC2018 matches. `bip.py`/s03
+stay untouched — they are the validated duration rule.
 
 **Do:**
-- Replace the old s05 lower-bound / corrected-excess silent term with the IMPL-2 marker-gated
-  silent. Keep restart-excess as-is (it's small and stable — do NOT re-derive). Keep the explicit
-  injury/sub/goal credit.
-- Wire Nate's exact 32-match table (home, away, BIP, expected, actual) as the validation/
-  replacement arm. Re-transcribe from `~/Downloads/nate silver WC stoppage 2018.jpg` if the
-  in-repo copy is missing.
-- Fit a single **residual-silent constant** on 2018 (the irreducible unobserved dead time after
-  marker-gating). Freeze it; apply the SAME constant to all six tournaments (POST cannot be
-  fit on its own — no ground truth).
+- In `src/s05_incident.py`, keep the existing lower-bound components (celebration/sub/card/injury,
+  each ∩ s03 dead segments) as-is — small and stable, do NOT re-derive. ADD a marker-gated silent
+  term: of the ≥`silent.min_silent_gap_s` non-restart gaps, credit ONLY those whose lead edge
+  carries an out-of-play marker (use `src/lib/silent.py`, already written). DROP the unmarked
+  silent gaps — genuinely dead (BIP keeps them) but a flat non-addable ~8.4 min/match baseline;
+  crediting them is the over-count.
+- Fit a single **residual-silent constant** on 2018 (the irreducible unmarked-but-addable
+  remainder). Freeze it in `params.yaml`; apply the SAME constant to all six tournaments (POST
+  cannot be fit — no ground truth).
 
-**Gate (and the numbers to report to the user — this is a human checkpoint):**
-- **Per-match:** Pearson r + MAE (min) vs Nate's **`expected`** column (NOT `actual` — `expected`
-  is the should-be-added model, ~13.2 min; `actual` is the board target). Use
-  `src/lib/nate.report(pred, "expected", "estimator")`. Must beat current r≈0.73–0.77
-  (target ≳0.85), MAE down.
-- **Aggregate:** 32-match mean corrected stoppage vs Nate's `expected` mean — stays ≈13 min level.
+**Gate — RESET (the old ≥0.85 target is falsified; ~25% marker coverage caps it at ~0.77):**
+- **Per-match:** Pearson r + MAE (min) vs Nate's **`expected`** column (NOT `actual`). Use
+  `src/lib/nate.report(pred, "expected", "estimator")`. **Beat the ~0.61–0.73 baseline; target
+  ~0.77.** Landing ~0.77 with a clean ablation IS success — do not chase 0.85.
+- **Aggregate:** 32-match mean estimator vs Nate's `expected` mean — stays ≈13 min level.
 - **Diagnostic:** per-match before/after for the five named matches — error shrinks on the three
-  low-injury ones WITHOUT breaking the two injury-dominated ones.
-- **Ablation table:** r/MAE for (A) alone → (A)+(B) → +residual-constant, so each piece is
-  traceable.
-- **Coverage flag:** state plainly that Nate validates WC2018 only; POST is validated indirectly
-  via the frozen 2018 calibration + the s03 WC2022 Opta BIP gate.
+  low-injury ones (Germany–Sweden, Russia–Egypt, Uruguay–Saudi) WITHOUT breaking the two
+  injury-dominated ones (Belgium–Panama, Tunisia–England).
+- **Ablation table:** r/MAE for lower-bound alone → + marker-gated silent → + residual-constant.
+- **Coverage flag:** Nate validates WC2018 only; POST is validated indirectly via the frozen 2018
+  calibration + the s03 WC2022 Opta BIP gate.
 
 **Checkpoint:** ADR with the full validation table; freeze the residual constant in `params.yaml`.
 Update this file: mark IMPL-3 DONE, point to IMPL-4. STOP. **Bring the r/MAE/diagnostic table to
@@ -332,24 +417,37 @@ the user before proceeding.**
 
 ### IMPL-4 — Propagate estimator error into s08; re-run s07→s09; lock X% (HUMAN CHECKPOINT)
 
-**Goal:** make the headline CI honest, then lock the single modeled claim.
+**Goal:** make the silent treatment an explicit sensitivity knob, make the headline CI honest,
+then lock the single modeled claim. **The decisive question: does X% even depend on the silent
+assumption?** If robust across the knob, the irreducible silent uncertainty does not threaten the
+claim and we say so; if not, we report the band.
+
+**Data ready (IMPL-4 setup, 2026-06-16):** `incident_stoppage.parquet` carries `silent_marked_s`
++ `silent_all_s`; `params.yaml:silent` has `residual_silent_s`/`estimator_pearson_r`/
+`estimator_mae_min`. Rewire `s08:true_stoppage_minutes` (~line 134) + `counterfactual.true_stoppage_knobs`.
+**LANDMINE:** s08 is a 2H-only (period 2) frame; the residual/MAE were fit on FULL-MATCH totals vs
+Nate — scale them to the 2H frame, don't bolt on raw. Full handoff in `prompts/impl_4_counterfactual_lock.md`.
 
 **Do:**
-- Propagate the per-match estimator error (the IMPL-3 MAE, ~±2 min) into the s08 bootstrap so the
-  CI reflects estimator uncertainty, not just sampling. The current `[2.6–2.8%]` band is too
-  tight. Only close (tied / 1-goal) matches flip the outcome — prioritize estimator accuracy
-  and error propagation there.
-- Re-run s07 (finalize productivity), then s08 (sensitivity grid), then s09 (figures + numbers
-  ledger).
+- Add a **silent-treatment knob to s08** with ≥3 settings, run end-to-end at each:
+  `silent_none` (credit zero silent — hard lower bound), `silent_marked` (the IMPL-3 marker-gated
+  central estimate), `silent_all` (credit all ≥threshold silent — old over-count upper bound).
+  Report X% at each so the headline's sensitivity to the silent assumption is visible.
+- Propagate the per-match estimator error (IMPL-3 MAE, ~±2–3 min) into the s08 bootstrap so the CI
+  reflects estimator uncertainty, not just sampling. The current `[2.6–2.8%]` band is too tight.
+  Only close (tied / 1-goal) matches flip the outcome — prioritize estimator accuracy there.
+- Re-run s07 (finalize productivity), then s08 (sensitivity grid), then s09 (figures + ledger).
 
 **Gate:**
 - s07: every productivity cell reports n_events + live_minutes.
-- s08: full sensitivity grid produced — **read it before locking X%** (CLAUDE.md §4/§6).
+- s08: full sensitivity grid INCLUDING the silent-treatment knob — **read it before locking X%**
+  (CLAUDE.md §4/§6); judge whether X% is robust to the silent knob.
 - s09: deterministic figures + numbers ledger; every figure traces to a script + checkpointed
   table + documented assumption.
 
 **Checkpoint:** lock the headline **X% + CI + sensitivity band** in `docs/decisions.md` with the
-user, eyes open. This closes the silent-component work.
+user, eyes open; state how sensitive X% is to the silent knob. This closes the silent-component
+work.
 
 ---
 
