@@ -90,9 +90,12 @@ def test_s08_silent_knob_brackets_headline():
     allg = s[s["group"] == "all"].copy()
     parts = allg["knob_set"].str.split("|", expand=True)
     allg["silent"], allg["cond"], allg["source"] = parts[0], parts[1], parts[2]
-    allg["prem"], allg["gw"] = parts[3], parts[4]
+    allg["hl"], allg["gw"] = parts[3], parts[4]
+    # the geometric-ceiling row is a single reported point (silent_marked only), not a swept
+    # knob -- drop it so the silent bracket pivot has all three levels per cell.
+    allg = allg[allg["gw"].isin(["off", "on"])]
     assert {"silent_none", "silent_marked", "silent_all"} <= set(allg["silent"])
-    piv = allg.pivot_table(index=["window", "cond", "source", "prem", "gw"],
+    piv = allg.pivot_table(index=["window", "cond", "source", "hl", "gw"],
                            columns="silent", values="pct_changed")
     assert (piv["silent_none"] <= piv["silent_marked"] + 1e-9).all()
     assert (piv["silent_marked"] <= piv["silent_all"] + 1e-9).all()
@@ -113,3 +116,50 @@ def test_s08_closed_form_p_change():
     pc_live = p_change(0.08 * np.array([0.0, 1.0, 2.0, 5.0]))  # lambda * omitted_live
     assert pc_live[0] == 0.0
     assert (np.diff(pc_live) > 0).all()                 # monotonic in omitted_live
+
+
+def test_s08_avg_lambda_decay():
+    """IMPL-8 Method A (ADR-0024): the window-average decayed 2H rate. h->inf reproduces the
+    observed rail (no decay), h->0 the open-play floor; the average is bounded in [floor, obs],
+    monotone INCREASING in the half-life, and monotone DECREASING in the window length T."""
+    import numpy as np
+
+    from src.s08_counterfactual import avg_lambda
+    obs, floor = 0.0816, 0.0427
+    T = np.array([0.5, 1.0, 3.0, 6.0, 12.0])
+    assert np.allclose(avg_lambda(T, float("inf"), obs, floor), obs)        # no decay -> obs
+    assert np.allclose(avg_lambda(T, 0.0, obs, floor), floor)               # instant decay -> floor
+    assert abs(float(avg_lambda(np.array([1e-9]), 4.0, obs, floor)[0]) - obs) < 1e-4  # T->0 -> obs
+    prev = None
+    for h in (1.0, 2.0, 4.0, 8.0, 16.0):
+        v = avg_lambda(T, h, obs, floor)
+        assert (v >= floor - 1e-12).all() and (v <= obs + 1e-12).all()      # bounded
+        if prev is not None:
+            assert (v >= prev - 1e-12).all()                               # larger h -> higher rate
+        prev = v
+    assert (np.diff(avg_lambda(T, 4.0, obs, floor)) < 0).all()             # longer window -> lower
+
+
+def test_s08_decay_endpoints():
+    """IMPL-8 gate (ADR-0024): the half-life endpoints back out the OLD productivity rails. At
+    h=inf (no decay, gross-up off) the grid reproduces the old `observed` rail; at h=0 (instant
+    decay) the 2H window reproduces the old `open_play` floor. 1H+2H at h=0 is NOT the old
+    open_play 1H+2H (the decay floors only the 2H window, by design). X% is monotone in the
+    half-life for the central spec (shorter half-life -> more decay -> lower X%)."""
+    s = _load(config.PROCESSED / "counterfactual_summary.parquet")
+    allg = s[s["group"] == "all"]
+
+    def x(hl, gw, win):
+        q = allg[(allg["window"] == win) &
+                 (allg["knob_set"] == f"silent_marked|overall|pooled_all|hl={hl}|{gw}")]
+        assert not q.empty, f"missing hl={hl}|{gw} {win}"
+        return float(q.iloc[0]["pct_changed"])
+
+    # endpoint regression: byte-close to the OLD locked rails (decisions.md / numbers_ledger).
+    assert abs(x("inf", "off", "1H+2H") - 0.238) < 0.004     # old `observed` rail
+    assert abs(x("inf", "off", "2H_only") - 0.171) < 0.004
+    assert abs(x("0.0", "off", "2H_only") - 0.097) < 0.004   # old `open_play` floor (2H exact)
+
+    # monotonicity in half-life for the central spec (gross-up on).
+    xs = [x(h, "on", "1H+2H") for h in ("0.0", "2.0", "4.0", "8.0", "inf")]
+    assert all(b >= a - 1e-9 for a, b in zip(xs, xs[1:])), f"X% not monotone in half-life: {xs}"

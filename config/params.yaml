@@ -128,18 +128,31 @@ counterfactual:
     - pooled_pre
     - pooled_post
     - regime_matched
-  # Productivity-premium rail (IMPL-7 Part C, ADR-0021 #2). The omitted minutes need not carry
-  # the full end-game urgency premium (2H-stoppage lambda 0.0816 ~= 1.4x the open-play 0.0427).
-  # `observed` applies the per-window stoppage lambda (UPPER rail, the central); `open_play`
-  # applies the cohort's regular-play lambda to the omitted minutes (LOWER rail, zero-premium
-  # floor). live_share CANCELS in mu, so this is a lambda choice, not a live-share knob.
-  productivity_premium_knobs:
-    - observed
-    - open_play
+  # Omitted-time productivity DECAY half-life, minutes (IMPL-8, ADR-0024; Method A). Replaces the
+  # binary productivity_premium rail. Counterfactual (unobserved) added 2H minutes should NOT
+  # inherit the full end-game urgency premium: the observed 2H-stoppage lambda (0.0816) is ~1.9x
+  # the open-play floor (0.0427) only because it is measured over short, late, high-urgency
+  # windows. So the per-minute 2H rate DECAYS from obs toward the open-play floor as the omitted
+  # window grows: lambda(t) = floor + (obs-floor)*0.5**(t/h); a match with T omitted (grossed)
+  # 2H clock-minutes gets the closed-form average avg_lambda(T,h) = floor + (obs-floor)*
+  # (1-exp(-k*T))/(k*T), k=ln2/h. 1H is UNCHANGED (keeps observed 1H-stoppage lambda). The two
+  # old rails ARE the limits: h->inf == `observed` (no decay), h->0 == `open_play` floor.
+  # REPORTED uncertainty band = half-life [2,8] min; CENTRAL point = 4 min (user 2026-06-19).
+  # .inf / 0.0 are kept ONLY to back the old two rails out exactly (regression + endpoint gate).
+  productivity_decay_halflife_min:
+    - .inf      # endpoint, regression only: = old `observed` rail (no decay)
+    - 8.0       # REPORTED BAND CEILING (least decay -> highest X%)
+    - 4.0       # CENTRAL (point estimate)
+    - 2.0       # REPORTED BAND FLOOR (most decay -> lowest X%)
+    - 0.0       # endpoint, regression only: = old `open_play` floor (instant decay)
   # In-stoppage time-wasting gross-up (IMPL-7 Part C, ADR-0021 #3 / O3). `off` = base model.
   # `on` grosses up the omitted CLOCK by the in-stoppage time-wasting that the added time itself
-  # generates (factor 1 + time-wasting_rate, rate = 1 - live_share), then applies productivity to
-  # the live portion. Implemented faithfully though it RAISES X% (user sign-off, no agenda).
+  # generates (one pass: factor 1 + time-wasting_rate, rate = 1 - live_share), then applies
+  # productivity to the live portion. CENTRAL = `on` (IMPL-8 / ADR-0024): the directive's own
+  # logic says stoppage time must compensate for the stoppages within it, so OFF leaves
+  # in-stoppage time-wasting uncompensated. The full stoppage-within-stoppage fixed point is the
+  # geometric ceiling 1/(1-r)=1/live_share (omitted_live == omitted_clock); s08 REPORTS it as the
+  # true upper rail above single-pass `on` but it is not a swept knob. RAISES X% (no agenda).
   timewaste_grossup_knobs:
     - "off"
     - "on"

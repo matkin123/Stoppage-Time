@@ -8,7 +8,11 @@ Closed form, per match, per added-time window h in {1H, 2H}:
     played_in_stoppage_h = minutes actually played past 45:00/90:00 (period_end-2700) [DC2 rename]
     omitted_h            = max(0, true_stoppage_h - played_in_stoppage_h)
     omitted_live_h       = omitted_h * live_share_h        (ball-in-play share, s07; DC1 table)
-    lambda_h             = two-team goals / match-live-minute in window h (pooled, overall)
+    lambda_h             = two-team goals / match-live-minute in window h (pooled, overall). The
+                           2H rate DECAYS with the omitted-window length (IMPL-8 / Method A,
+                           ADR-0024): avg_lambda(T,h) ramps from the observed 2H-stoppage rate down
+                           toward the open-play floor as the counterfactual window grows; 1H keeps
+                           the observed rate. The old productivity-premium rails ARE the limits.
     mu                   = sum_h lambda_h * omitted_live_h
     P(change)            = 1 - exp(-mu)                     (P[>=1 extra goal by either team])
     X%                   = mean over matches of P(change)
@@ -41,7 +45,66 @@ def p_change(mu):
     return 1.0 - np.exp(-mu)
 
 
+def avg_lambda(T_min, halflife_min, obs_rate, floor_rate):
+    """Window-average decayed 2H goal rate (IMPL-8 Method A, ADR-0024).
+
+    Per marginal omitted 2H minute t the rate decays from the observed 2H-stoppage rate toward the
+    open-play floor: lambda(t) = floor + (obs-floor)*0.5**(t/h). Averaged over a match's omitted
+    window [0, T] this has the closed form
+        avg_lambda(T, h) = floor + (obs-floor)*(1-exp(-k*T))/(k*T),  k = ln(2)/h.
+    Limits (the two old productivity-premium rails ARE the endpoints): h->inf (k->0) gives obs (NO
+    decay); h->0 (k->inf) gives floor; T->0 gives obs. Monotone increasing in h. Vectorized over
+    per-match T and over obs/floor (both endpoints are drawn per iteration in the bootstrap)."""
+    obs = np.asarray(obs_rate, dtype=float)
+    floor = np.asarray(floor_rate, dtype=float)
+    T = np.asarray(T_min, dtype=float)
+    if math.isinf(halflife_min):
+        return obs + 0.0 * T                     # no decay -> observed rail (broadcast to T)
+    if halflife_min <= 0.0:
+        return np.where(T > 0.0, floor, obs)     # instant decay -> floor (obs only at T=0 limit)
+    k = math.log(2.0) / halflife_min
+    kT = k * T
+    ramp = np.where(kT > 1e-12, -np.expm1(-kT) / np.where(kT > 1e-12, kT, 1.0), 1.0)
+    return floor + (obs - floor) * ramp
+
+
+def _geom_ceiling(window, ci, z, halflife=4.0):
+    """Geometric (full stoppage-within-stoppage) gross-up ceiling X% for the central spec. Only the
+    genuine-stoppage fraction z of dead time recurs (ADR-0024 z-correction), so the geometric-limit
+    live factor is ls/(1 - z*(1-ls)) -- the fixed point of compensating ONLY for the stoppage (not
+    normal flow) within the added time. With z<1 this sits just above single-pass `on`, NOT at the
+    old 1/live_share. Reported as the upper rail above `on`, not a swept knob."""
+    fl1 = np.where(ci["ls1"] > 0, ci["ls1"] / (1.0 - z * (1.0 - ci["ls1"])), 0.0)
+    fl2 = np.where(ci["ls2"] > 0, ci["ls2"] / (1.0 - z * (1.0 - ci["ls2"])), 0.0)
+    ol1 = np.maximum(0.0, ci["ts1"] - ci["pl1"]) * fl1
+    ol2 = np.maximum(0.0, ci["ts2"] - ci["pl2"]) * fl2
+    ls2_safe = np.where(ci["ls2"] > 0, ci["ls2"], 1.0)
+    T2 = np.where(ci["ls2"] > 0, ol2 / ls2_safe, 0.0)
+    avg2 = avg_lambda(T2, halflife, ci["obs2"], ci["floor2"])
+    mu = avg2 * ol2 if window == "2H_only" else ci["lam1"] * ol1 + avg2 * ol2
+    return float(p_change(mu).mean())
+
+
 # ---- lambda estimation ---------------------------------------------------
+def genuine_stoppage_share(incident, seg):
+    """z = genuine-stoppage fraction of dead time, measured in regulation (ADR-0024 gross-up
+    correction). Of all ball-out-of-play time in periods 1-2, only the part the s05 estimator
+    COUNTS as stoppage (lower_bound restart-excess + marked silent) is compensable; the rest is
+    normal flow (throw-ins, prompt goal kicks) that no ref adds back. The time-wasting gross-up
+    therefore recurs only z*(1-live_share) of the added-time clock, NOT the whole dead share -- the
+    old z=1 over-credited the stoppage-within-stoppage tail (the geometric ceiling was ~1/live_share
+    rather than just above single-pass). Pooled scalar; traces to bip_segments (dead) +
+    incident_stoppage (counted stoppage). Residual silent is excluded (a frozen estimator constant,
+    not a per-event stoppage mechanism), matching the chosen z definition."""
+    s = seg.copy()
+    s["dur"] = s["end_s"] - s["start_s"]
+    reg = s[s["period"].isin([1, 2])]
+    dead = reg[~reg["in_play"]]["dur"].sum()
+    ri = incident[incident["period"].isin([1, 2])]
+    counted = (ri["lower_bound_s"] + ri["silent_marked_s"]).sum()
+    return float(counted / dead)
+
+
 def two_h_addable_share(incident):
     """Fraction of measured addable stoppage (lower_bound + marked silent) that falls in the 2H,
     over regulation periods. The IMPL-3 residual constant and estimator MAE were fit on
@@ -114,10 +177,11 @@ def _state_key(conditioning, window, mid, st_dict):
 def regular_lambda_cells(prod):
     """reg_cells[cohort] = (goal_count, live_minutes) for OPEN PLAY (phase=regular), per cohort.
 
-    The productivity-premium LOWER rail (open_play, ADR-0021 #2) applies the regular-play goal
-    rate -- the same goals-per-live-minute people see for 95% of the match, with no end-game
-    urgency premium -- to the omitted stoppage minutes. Pulled straight from s07's productivity
-    table (scope pooled / group:PRE / group:POST) so the floor lambda traces to the ledger."""
+    The decay FLOOR (IMPL-8 / ADR-0024; was the old open_play rail, ADR-0021 #2): the regular-play
+    goal rate -- the same goals-per-live-minute people see for 95% of the match, with no end-game
+    urgency premium -- is what the decayed 2H rate relaxes TOWARD as the omitted window grows.
+    Pulled straight from s07's productivity table (scope pooled / group:PRE / group:POST) so the
+    floor lambda traces to the ledger. Registered as a drawn cell so its sampling error enters CI."""
     scope_of = {"all": "pooled", "pre": "group:PRE", "post": "group:POST"}
     out = {}
     for cohort, scope in scope_of.items():
@@ -138,6 +202,7 @@ def main() -> None:
     goals = pd.read_parquet(config.INTERIM / "goals.parquet")
     state = pd.read_parquet(config.INTERIM / "match_state.parquet")
     incident = pd.read_parquet(config.INTERIM / "incident_stoppage.parquet")
+    seg = pd.read_parquet(config.INTERIM / "bip_segments.parquet")
     live_share = pd.read_parquet(config.PROCESSED / "stoppage_live_share.parquet")
     prod = pd.read_parquet(config.PROCESSED / "productivity.parquet")
     pis_path = config.INTERIM / "played_in_stoppage.parquet"
@@ -182,6 +247,11 @@ def main() -> None:
     f2 = two_h_addable_share(incident)
     f1 = 1.0 - f2
     fshare = {"1H": f1, "2H": f2}
+    # z = genuine-stoppage fraction of dead time (ADR-0024): the time-wasting gross-up recurs only
+    # z*(1-live_share) of the added-time clock, not the full dead share. Single pooled scalar.
+    z_genuine = genuine_stoppage_share(incident, seg)
+    print(f"  genuine-stoppage share z={z_genuine:.3f} (gross-up recurs z*(1-live_share), "
+          f"not the full dead share)")
     residual_s = float(sil["residual_silent_s"])
     sigma_full_min = float(sil["estimator_mae_min"]) * math.sqrt(math.pi / 2.0)
     print(f"  addable share f2(2H)={f2:.3f} f1(1H)={f1:.3f}; residual {residual_s:.1f}s split -> "
@@ -225,79 +295,116 @@ def main() -> None:
         pf[lead1_90] = p_change(mu_arr[lead1_90] / 2.0)    # trailing team (half rate) equalizes+
         return pf
 
+    central = "silent_marked|overall|pooled_all|hl=4.0|on"   # IMPL-8: gross-up ON, decay h=4
     per_match_rows, summary_rows = [], []
-    central_2h_only = {}  # knob_set -> central X% (2H_only) for the comparison line
+    central_2h_only = {}   # knob_set -> central X% (2H_only) for the comparison line
+    central_inputs = {}    # snapshot of the central spec's per-match arrays (geometric ceiling)
     grid = list(itertools.product(
         cfg["true_stoppage_knobs"], cfg["lambda_conditioning_knobs"], cfg["lambda_source_knobs"],
-        cfg["productivity_premium_knobs"], cfg["timewaste_grossup_knobs"]))
-    for ts_knob, cond_knob, src_knob, prem_knob, gw_knob in grid:
-        knob_set = f"{ts_knob}|{cond_knob}|{src_knob}|{prem_knob}|{gw_knob}"
+        cfg["productivity_decay_halflife_min"], cfg["timewaste_grossup_knobs"]))
+    for ts_knob, cond_knob, src_knob, h_knob, gw_knob in grid:
+        knob_set = f"{ts_knob}|{cond_knob}|{src_knob}|hl={h_knob}|{gw_knob}"
         grossup = gw_knob == "on"
 
-        # per-window per-match arrays + a per-window cell index for the bootstrap
+        # per-window per-match arrays + per-window cell indices for the bootstrap. For the 2H
+        # window the decay needs BOTH endpoint cells per match: the observed 2H-stoppage rate
+        # (decay START) and the open-play floor (decay FLOOR). 1H is UNCHANGED (observed 1H lambda).
         ts_arr, played_arr, ls_arr, fl_arr, olive, lam, cellidx = {}, {}, {}, {}, {}, {}, {}
         distinct, cell_ce = {}, []
+        floor2 = flooridx2 = None
         for window in ("1H", "2H"):
             tsw = np.array([ts_window_min(m, window, ts_knob) for m in eligible])
             plw = np.array([played.get((m, window), 0.0) for m in eligible])
             lsw = np.nan_to_num(
                 np.array([ls_ratio.get((m, window), 0.0) for m in eligible]), nan=0.0)
-            # O3 gross-up (ADR-0021 #3): inflate omitted CLOCK by (1 + time-wasting_rate),
-            # rate = 1 - live_share, then take the live portion (x live_share). live factor is
-            # lsw*(2-lsw) grossed-up vs lsw at base. live_share otherwise CANCELS against lambda.
-            flw = lsw * (2.0 - lsw) if grossup else lsw
+            # O3 gross-up (ADR-0021 #3 / ADR-0024 z-correction): inflate omitted CLOCK for the
+            # stoppage WITHIN the added time, then take the live portion. Only the genuine-stoppage
+            # fraction z of dead time recurs (refs compensate stoppage, not normal flow) -- NOT the
+            # whole dead share (old z=1 over-credited the tail). One pass adds z*(1-ls) of the clock,
+            # so the live factor is lsw*(1 + z*(1-lsw)) vs lsw at base. The decay HORIZON tracks this
+            # via T = olive/live_share (= the grossed clock), so horizon and live-minutes never drift.
+            flw = lsw * (1.0 + z_genuine * (1.0 - lsw)) if grossup else lsw
             olivew = np.maximum(0.0, tsw - plw) * flw
             cnt_w = np.zeros(n)
             exp_w = np.zeros(n)
             idx_w = np.zeros(n, dtype=int)
+            fcnt = np.zeros(n)
+            fexp = np.zeros(n)
+            fidx = np.zeros(n, dtype=int)
             for i, m in enumerate(eligible):
                 coh = _cohort_of(src_knob, group[m])
-                if prem_knob == "open_play":
-                    ck = ("__regular__", coh)         # open-play floor lambda (LOWER rail)
-                else:
-                    ck = (coh, window) + _state_key(cond_knob, window, m, st_dict)
+                ck = (coh, window) + _state_key(cond_knob, window, m, st_dict)  # observed cell
                 c, e = cells[ck]
                 cnt_w[i], exp_w[i] = c, e
                 if ck not in distinct:
                     distinct[ck] = len(cell_ce)
                     cell_ce.append((c, e))
                 idx_w[i] = distinct[ck]
+                if window == "2H":                          # open-play floor cell (decay FLOOR)
+                    fk = ("__regular__", coh)
+                    fc, fe = cells[fk]
+                    fcnt[i], fexp[i] = fc, fe
+                    if fk not in distinct:
+                        distinct[fk] = len(cell_ce)
+                        cell_ce.append((fc, fe))
+                    fidx[i] = distinct[fk]
             exp_safe = np.where(exp_w > 0, exp_w, 1.0)
             ts_arr[window], played_arr[window], ls_arr[window], fl_arr[window] = tsw, plw, lsw, flw
             olive[window] = olivew
             lam[window] = cnt_w / exp_safe * (exp_w > 0)
             cellidx[window] = idx_w
+            if window == "2H":
+                fexp_safe = np.where(fexp > 0, fexp, 1.0)
+                floor2 = fcnt / fexp_safe * (fexp > 0)      # per-match open-play floor rate
+                flooridx2 = fidx
 
-        # central (deterministic) mu per window-set
+        # 2H decay: grossed omitted clock T = olive_2H / live_share_2H (off -> raw omitted clock;
+        # on -> one-pass grossed clock), guarding live_share > 0. obs2 = observed 2H rate per match.
+        ls2 = ls_arr["2H"]
+        ls2_safe = np.where(ls2 > 0, ls2, 1.0)
+        T2 = np.where(ls2 > 0, olive["2H"] / ls2_safe, 0.0)
+        obs2 = lam["2H"]
+        avg2 = avg_lambda(T2, h_knob, obs2, floor2)         # decayed average 2H rate per match
+
+        # central (deterministic) mu per window-set; 2H uses the decayed rate, 1H is unchanged.
         mu = {
-            "2H_only": lam["2H"] * olive["2H"],
-            "1H+2H": lam["1H"] * olive["1H"] + lam["2H"] * olive["2H"],
+            "2H_only": avg2 * olive["2H"],
+            "1H+2H": lam["1H"] * olive["1H"] + avg2 * olive["2H"],
         }
         central_2h_only[knob_set] = float(p_change(mu["2H_only"]).mean())
+        if knob_set == central:
+            central_inputs = dict(
+                ts1=ts_arr["1H"], pl1=played_arr["1H"], ls1=ls_arr["1H"], lam1=lam["1H"],
+                ts2=ts_arr["2H"], pl2=played_arr["2H"], ls2=ls2, obs2=obs2, floor2=floor2,
+                T2_grossed=T2)
 
         # bootstrap: one Jeffreys-Gamma lambda draw per distinct cell per iteration (shared across
-        # matches in that cell -> honest shared-cell uncertainty, unlike per-match-independent
-        # draws), plus the silent_marked estimator-error draw on true_stoppage.
+        # matches in that cell). The decay is a transform of TWO drawn rates, so the 2H window draws
+        # BOTH the observed cell AND the open-play floor cell -> the CI now reflects sampling error
+        # in the 73-goal 2H rate AND the 675-goal floor, combined through avg_lambda. Plus the
+        # silent_marked estimator-error draw on true_stoppage (which also re-shifts the horizon T2).
         cell_count = np.array([c for c, _ in cell_ce], dtype=float)
         cell_exp = np.array([e for _, e in cell_ce], dtype=float)
         cell_exp_safe = np.where(cell_exp > 0, cell_exp, 1.0)
         cell_valid = (cell_exp > 0).astype(float)
         sigma = sigma_full_min if ts_knob == "silent_marked" else 0.0
         boot = {w: {g: np.empty(B) for g in group_masks} for w in mu}
-        # parallel bootstrap of the outcome-flip metric. outcome_flip() is pure arithmetic on the
-        # drawn mu (no RNG draws), so adding it here does NOT perturb the stream -> the scoreline
-        # X% and its CI are byte-identical to before (ADR-0008 invariant preserved).
+        # outcome_flip() is pure arithmetic on the drawn mu (no RNG draws), so computing it here
+        # does NOT perturb the stream.
         boot_flip = {w: {g: np.empty(B) for g in group_masks} for w in mu}
         for b in range(B):
             g = rng.gamma(cell_count + 0.5, 1.0 / cell_exp_safe) * cell_valid
-            lam1, lam2 = g[cellidx["1H"]], g[cellidx["2H"]]
+            lam1 = g[cellidx["1H"]]
+            obs2_b, floor2_b = g[cellidx["2H"]], g[flooridx2]
             if sigma > 0:
                 E = rng.normal(0.0, sigma, size=n)
                 ol1 = np.maximum(0.0, ts_arr["1H"] + E * f1 - played_arr["1H"]) * fl_arr["1H"]
                 ol2 = np.maximum(0.0, ts_arr["2H"] + E * f2 - played_arr["2H"]) * fl_arr["2H"]
             else:
                 ol1, ol2 = olive["1H"], olive["2H"]
-            mub = {"2H_only": lam2 * ol2, "1H+2H": lam1 * ol1 + lam2 * ol2}
+            T2_b = np.where(ls2 > 0, ol2 / ls2_safe, 0.0)   # horizon recomputed per draw (ADR-0024)
+            avg2_b = avg_lambda(T2_b, h_knob, obs2_b, floor2_b)
+            mub = {"2H_only": avg2_b * ol2, "1H+2H": lam1 * ol1 + avg2_b * ol2}
             for w in mu:
                 pcb = p_change(mub[w])
                 flipb = outcome_flip(mub[w])
@@ -323,13 +430,42 @@ def main() -> None:
                 per_match_rows.append(
                     {"match_id": m, "window": w, "knob_set": knob_set, "p_change": float(pcv)})
 
+    # geometric (full stoppage-within-stoppage) ceiling rows -- REPORTED, not a swept knob
+    # (ADR-0024). Live factor 1 (omitted_live == raw omitted clock; horizon = clock/live_share),
+    # the true upper rail above single-pass `on`. Appended to the summary so the ledger traces to a
+    # table; deterministic point at the central spec (no CI -- it is a reported bound, not a knob).
+    if central_inputs:
+        for w in mu:
+            summary_rows.append({
+                "window": w, "group": "all",
+                "knob_set": "silent_marked|overall|pooled_all|hl=4.0|geometric",
+                "pct_changed": _geom_ceiling(w, central_inputs, z_genuine),
+                "pct_outcome_flip": float("nan"),
+                "ci_lo": float("nan"), "ci_hi": float("nan"),
+                "flip_ci_lo": float("nan"), "flip_ci_hi": float("nan"),
+                "n_matches": int(group_masks["all"].sum()),
+            })
+
     summary = pd.DataFrame(summary_rows)
     per_match = pd.DataFrame(per_match_rows)
     per_match.to_parquet(config.PROCESSED / "counterfactual.parquet", index=False)
     summary.to_parquet(config.PROCESSED / "counterfactual_summary.parquet", index=False)
 
-    # ---- print the headline-window sensitivity grid + the Part C band --------------------
-    central = "silent_marked|overall|pooled_all|observed|off"
+    # decay_profile: the central spec's per-match grossed omitted-2H CLOCK (decay horizon T) +
+    # the obs/floor rates, so the s09 decay figure traces to a checkpointed table (CLAUDE.md
+    # standard of proof). olive_2H = T2_grossed * live_share_2H (gross-up ON, the central).
+    if central_inputs:
+        ci = central_inputs
+        pd.DataFrame({
+            "match_id": eligible,
+            "omitted_2h_clock_min": ci["T2_grossed"],
+            "live_share_2h": ci["ls2"],
+            "omitted_2h_live_min": ci["T2_grossed"] * ci["ls2"],
+            "obs_rate": ci["obs2"],
+            "floor_rate": ci["floor2"],
+        }).to_parquet(config.PROCESSED / "decay_profile.parquet", index=False)
+
+    # ---- print the headline-window sensitivity grid + the IMPL-8 bands -------------------
     hl = summary[(summary["window"] == headline_window) & (summary["group"] == "all")].copy()
     print(f"\n  HEADLINE WINDOW = {headline_window}  (X% = mean P[>=1 extra goal]); group=all "
           f"({len(hl)} knob_sets):")
@@ -345,26 +481,37 @@ def main() -> None:
               f"ci=[{r['ci_lo']:.3f},{r['ci_hi']:.3f}]; 2H_only X={central_2h_only[central]:.3f}; "
               f"outcome-flip {r['pct_outcome_flip']:.3f} ci=[{r['flip_ci_lo']:.3f},{r['flip_ci_hi']:.3f}]")
 
-    # ADR-0021 Part C band: at the central silent/conditioning/source, the productivity-premium
-    # rails (open_play=LOWER, observed=UPPER) bracket the headline; the O3 gross-up raises it.
-    def at(silent, prem, gw, win):
+    # IMPL-8 (ADR-0024): the half-life sweep [2,8]min IS the reported productivity band (replaces the
+    # old observed/open_play rails); gross-up ON is the central. h=inf/0.0 back out the OLD rails.
+    def at(silent, hlf, gw, win):
         q = summary[(summary["group"] == "all") & (summary["window"] == win) &
-                    (summary["knob_set"] == f"{silent}|overall|pooled_all|{prem}|{gw}")]
+                    (summary["knob_set"] == f"{silent}|overall|pooled_all|hl={hlf}|{gw}")]
         return q.iloc[0] if not q.empty else None
-    print("\n  PRODUCTIVITY-PREMIUM BAND (silent_marked|overall|pooled_all):")
+    print("\n  DECAY HALF-LIFE BAND (silent_marked|overall|pooled_all, gross-up ON):")
     for win in (headline_window, "2H_only"):
-        lo, hi = at("silent_marked", "open_play", "off", win), at("silent_marked", "observed", "off", win)
-        if lo is not None and hi is not None:
-            print(f"    {win:<7}  open_play(LOWER) {lo['pct_changed']:.3f} .. "
-                  f"observed(UPPER) {hi['pct_changed']:.3f}")
-    print("  O3 TIME-WASTING GROSS-UP (silent_marked|overall|pooled_all, observed lambda):")
+        ceil, mid, floor = at("silent_marked", 8.0, "on", win), at("silent_marked", 4.0, "on", win), \
+            at("silent_marked", 2.0, "on", win)
+        if mid is not None:
+            print(f"    {win:<7}  h2(FLOOR) {floor['pct_changed']:.3f} .. h4(CENTRAL) "
+                  f"{mid['pct_changed']:.3f} ci=[{mid['ci_lo']:.3f},{mid['ci_hi']:.3f}] .. "
+                  f"h8(CEIL) {ceil['pct_changed']:.3f}")
+    print("  ENDPOINT REGRESSION (gross-up OFF; must back out the OLD two rails):")
     for win in (headline_window, "2H_only"):
-        off, on = at("silent_marked", "observed", "off", win), at("silent_marked", "observed", "on", win)
+        no_decay = at("silent_marked", float("inf"), "off", win)   # = old `observed` rail
+        instant = at("silent_marked", 0.0, "off", win)            # = old `open_play` floor (2H only exact)
+        if no_decay is not None and instant is not None:
+            print(f"    {win:<7}  h=inf(=observed) {no_decay['pct_changed']:.3f} .. "
+                  f"h=0(=open_play) {instant['pct_changed']:.3f}")
+    print("  GROSS-UP RAILS (silent_marked|overall|pooled_all, h=4 central):")
+    for win in (headline_window, "2H_only"):
+        off, on = at("silent_marked", 4.0, "off", win), at("silent_marked", 4.0, "on", win)
+        geom = _geom_ceiling(win, central_inputs, z_genuine) if central_inputs else float("nan")
         if off is not None and on is not None:
-            print(f"    {win:<7}  off {off['pct_changed']:.3f} -> on {on['pct_changed']:.3f} "
-                  f"(raises X%, ADR-0021 #3)")
+            print(f"    {win:<7}  off {off['pct_changed']:.3f} -> on(CENTRAL) {on['pct_changed']:.3f} "
+                  f"-> geometric-ceiling {geom:.3f}")
 
-    print(f"\n  wrote counterfactual.parquet ({len(per_match)} rows) and counterfactual_summary.parquet")
+    print(f"\n  wrote counterfactual.parquet ({len(per_match)} rows), counterfactual_summary.parquet, "
+          f"decay_profile.parquet")
     print("  STOP: read the sensitivity grid above before locking a single X% in decisions.md.")
 
 

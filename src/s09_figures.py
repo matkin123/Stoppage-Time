@@ -100,15 +100,17 @@ def fig_sensitivity():
         return None
     hw = config.params()["counterfactual"]["headline_window"]
     s = pd.read_parquet(path)
-    # Focus the band figure on the central conditioning/source (overall|pooled_all): the Part C
-    # axes that the lock SELECTS are silent {none,marked,all} x premium {observed,open_play} x
-    # gross-up {off,on}. The conditioning/source sensitivities barely move X% (ADR-0019) and would
-    # make the panel unreadable at 96 rows.
+    # Focus the band figure on the central conditioning/source (overall|pooled_all): the axes the
+    # lock SELECTS are silent {none,marked,all} x decay-half-life {2,4,8} x gross-up {off,on}. The
+    # conditioning/source sensitivities barely move X% (ADR-0019) and would make the panel
+    # unreadable. The regression-only endpoints (hl=inf / hl=0.0) and the geometric ceiling row are
+    # dropped here -- they are not part of the reported band.
     parts = s["knob_set"].str.split("|", expand=True)
-    s = s.assign(silent=parts[0], cond=parts[1], source=parts[2], prem=parts[3], gw=parts[4])
+    s = s.assign(silent=parts[0], cond=parts[1], source=parts[2], hl=parts[3], gw=parts[4])
     s = s[(s["group"] == "all") & (s["window"] == hw) &
-          (s["cond"] == "overall") & (s["source"] == "pooled_all")].copy()
-    s["label"] = s["silent"] + " | " + s["prem"] + " | grossup=" + s["gw"]
+          (s["cond"] == "overall") & (s["source"] == "pooled_all") &
+          (s["gw"].isin(["off", "on"])) & (~s["hl"].isin(["hl=inf", "hl=0.0"]))].copy()
+    s["label"] = s["silent"] + " | " + s["hl"] + " | grossup=" + s["gw"]
     s = s.sort_values("pct_changed")
     xerr_lo = (s["pct_changed"] - s["ci_lo"]).clip(lower=0)
     xerr_hi = (s["ci_hi"] - s["pct_changed"]).clip(lower=0)
@@ -119,6 +121,67 @@ def fig_sensitivity():
     ax.set_xlabel("P(>=1 extra goal) -- share of matches")
     ax.set_title(f"Counterfactual band, window={hw}, overall|pooled_all (95% CI)")
     return _save(fig, "f05_sensitivity_grid.png")
+
+
+def fig_productivity_decay():
+    """Promote the IMPL-8 prototype to a permanent figure (ADR-0024). Traces to decay_profile.parquet
+    (the central spec's per-match grossed omitted-2H clock + obs/floor rates) and avg_lambda (s08)."""
+    import numpy as np
+
+    from src.s08_counterfactual import avg_lambda
+    path = config.PROCESSED / "decay_profile.parquet"
+    if not path.exists():
+        return None
+    df = pd.read_parquet(path)
+    obs = float(df["obs_rate"].iloc[0])
+    floor = float(df["floor_rate"].iloc[0])
+    T = df["omitted_2h_clock_min"].to_numpy()
+    T = T[np.isfinite(T)]
+    tmax = max(12.0, float(np.nanmax(T)) if len(T) else 12.0)
+    curves = [(2.0, "tab:red"), (4.0, "tab:blue"), (8.0, "tab:orange")]
+
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(13, 5))
+
+    # left: per-marginal-minute lambda(t) = floor + (obs-floor)*0.5**(t/h)
+    t = np.linspace(0.0, tmax, 240)
+    axhL = axL.twinx()
+    axhL.hist(T, bins=24, color="0.88", zorder=0)
+    axhL.set_ylabel("matches (omitted-2H clock)")
+    axhL.set_zorder(axL.get_zorder() - 1)
+    axL.patch.set_visible(False)
+    for h, c in curves:
+        lab = f"h={h:g} min" + ("  (CENTRAL)" if h == 4.0 else "")
+        axL.plot(t, floor + (obs - floor) * 0.5 ** (t / h), color=c, lw=2, label=lab)
+    axL.axhline(obs, ls="--", color="k", lw=1, label=f"observed 2H-stoppage ({obs:.4f})")
+    axL.axhline(floor, ls=":", color="gray", lw=1.2, label=f"open-play floor ({floor:.4f})")
+    axL.set_xlabel("marginal omitted 2H minute t")
+    axL.set_ylabel(r"goals per live-minute  $\lambda(t)$")
+    axL.set_title("Per-minute productivity decay")
+    axL.set_xlim(0, tmax)
+    axL.legend(fontsize=7, loc="upper right")
+
+    # right: effective window-average rate avg_lambda(T,h) a match actually gets
+    Tg = np.linspace(0.02, tmax, 240)
+    axhR = axR.twinx()
+    axhR.hist(T, bins=24, color="0.88", zorder=0)
+    axhR.set_ylabel("matches (omitted-2H clock)")
+    axhR.set_zorder(axR.get_zorder() - 1)
+    axR.patch.set_visible(False)
+    for h, c in curves:
+        lab = f"h={h:g} min" + ("  (CENTRAL)" if h == 4.0 else "")
+        axR.plot(Tg, avg_lambda(Tg, h, obs, floor), color=c, lw=2, label=lab)
+    axR.axhline(obs, ls="--", color="k", lw=1)
+    axR.axhline(floor, ls=":", color="gray", lw=1.2)
+    if len(T):
+        meanT = float(np.nanmean(T))
+        axR.axvline(meanT, color="green", lw=1.2, label=f"mean T = {meanT:.1f} min")
+    axR.set_xlabel("total omitted 2H clock minutes T (grossed)")
+    axR.set_ylabel(r"effective average  $\overline{\lambda}(T)$")
+    axR.set_title("Effective rate a match actually gets")
+    axR.set_xlim(0, tmax)
+    axR.legend(fontsize=7, loc="upper right")
+
+    return _save(fig, "f06_productivity_decay.png")
 
 
 def write_ledger(prod):
@@ -149,10 +212,14 @@ def write_ledger(prod):
         hw = config.params()["counterfactual"]["headline_window"]
         s = pd.read_parquet(cf)
         parts = s["knob_set"].str.split("|", expand=True)
-        s = s.assign(silent=parts[0], cond=parts[1], source=parts[2], prem=parts[3], gw=parts[4])
-        allg = s[(s["group"] == "all") & (s["window"] == hw)].copy()
+        s = s.assign(silent=parts[0], cond=parts[1], source=parts[2], hl=parts[3], gw=parts[4])
+        # the reported grid excludes the regression-only endpoints (hl=inf/0.0) and the geometric
+        # ceiling row; the full-range min/max is over the legitimate reported knobs only.
+        reported = s[(s["group"] == "all") & (s["window"] == hw) &
+                     (s["gw"].isin(["off", "on"])) & (~s["hl"].isin(["hl=inf", "hl=0.0"]))].copy()
+        allg = reported
         lo, hi = allg["pct_changed"].min(), allg["pct_changed"].max()
-        central = "silent_marked|overall|pooled_all|observed|off"
+        central = "silent_marked|overall|pooled_all|hl=4.0|on"
 
         def row(knob, win=hw):
             q = s[(s["group"] == "all") & (s["window"] == win) & (s["knob_set"] == knob)]
@@ -180,39 +247,50 @@ def write_ledger(prod):
             if not sub.empty:
                 lines.append(f"  - {lvl}: {sub['pct_changed'].min():.1%} - {sub['pct_changed'].max():.1%}")
 
-        # ADR-0021 Part C: productivity-premium band, O3 gross-up, outcome-flip secondary
-        def band(silent):
-            out = {}
-            for win in (hw, "2H_only"):
-                lo_r = row(f"{silent}|overall|pooled_all|open_play|off", win)
-                hi_r = row(f"{silent}|overall|pooled_all|observed|off", win)
-                gu_r = row(f"{silent}|overall|pooled_all|observed|on", win)
-                out[win] = (lo_r, hi_r, gu_r)
-            return out
-        b = band("silent_marked")
+        # IMPL-8 (ADR-0024): the decay half-life sweep REPLACES the old productivity-premium rails.
+        def hrow(hlf, gw, win):
+            return row(f"silent_marked|overall|pooled_all|hl={hlf}|{gw}", win)
         lines += [
             "",
-            "## Productivity-premium band (ADR-0021 #2; silent_marked|overall|pooled_all)",
-            "- rails over the lambda applied to OMITTED minutes; live_share cancels in mu, so this "
-            "is a lambda choice, not a live-share knob.",
+            "## Productivity-decay half-life band (ADR-0024; silent_marked|overall|pooled_all, gross-up ON)",
+            "- replaces the old observed/open-play rails: the 2H lambda DECAYS from the observed "
+            "2H-stoppage rate toward the open-play floor over the omitted window; half-life h is the "
+            "swept band parameter. Reported band = h in [2,8]min; central h=4. live_share cancels in mu.",
         ]
         for win in (hw, "2H_only"):
-            lo_r, hi_r, _ = b[win]
-            if lo_r is not None and hi_r is not None:
+            fl, mid, ce = hrow("2.0", "on", win), hrow("4.0", "on", win), hrow("8.0", "on", win)
+            if mid is not None and fl is not None and ce is not None:
                 lines.append(
-                    f"- {win}: OPEN-PLAY floor {lo_r['pct_changed']:.1%} "
-                    f"[CI {lo_r['ci_lo']:.1%}, {lo_r['ci_hi']:.1%}]  ..  OBSERVED-stoppage "
-                    f"{hi_r['pct_changed']:.1%} [CI {hi_r['ci_lo']:.1%}, {hi_r['ci_hi']:.1%}]")
+                    f"- {win}: h2 FLOOR {fl['pct_changed']:.1%} "
+                    f"[CI {fl['ci_lo']:.1%}, {fl['ci_hi']:.1%}]  ..  h4 CENTRAL {mid['pct_changed']:.1%} "
+                    f"[CI {mid['ci_lo']:.1%}, {mid['ci_hi']:.1%}]  ..  h8 CEIL {ce['pct_changed']:.1%} "
+                    f"[CI {ce['ci_lo']:.1%}, {ce['ci_hi']:.1%}]")
         lines += [
-            "",
-            "## O3 in-stoppage time-wasting gross-up (ADR-0021 #3; observed lambda, silent_marked)",
-            "- grosses up omitted CLOCK by (1 + time-wasting_rate) then applies productivity to the "
-            "live portion; RAISES X% (faithful, no agenda).",
+            "- endpoint regression (gross-up OFF): h=inf backs out the OLD `observed` rail, h=0 the "
+            "OLD `open_play` floor (2H_only exact; 1H+2H differs because the decay floors only 2H).",
         ]
         for win in (hw, "2H_only"):
-            _, hi_r, gu_r = b[win]
-            if hi_r is not None and gu_r is not None:
-                lines.append(f"- {win}: gross-up off {hi_r['pct_changed']:.1%} -> on {gu_r['pct_changed']:.1%}")
+            no_decay, instant = hrow("inf", "off", win), hrow("0.0", "off", win)
+            if no_decay is not None and instant is not None:
+                lines.append(f"  - {win}: h=inf(=observed) {no_decay['pct_changed']:.1%} .. "
+                             f"h=0(=open_play) {instant['pct_changed']:.1%}")
+        lines += [
+            "",
+            "## O3 in-stoppage time-wasting gross-up (ADR-0024; central=ON, h=4, silent_marked)",
+            "- grosses up omitted CLOCK for the stoppage WITHIN added time, then applies the decayed "
+            "lambda to the live portion; central is gross-up ON (one pass). Only the genuine-stoppage "
+            "fraction z of dead time recurs (refs compensate stoppage, not normal flow), so one pass "
+            "adds z*(1-live_share) of the clock and the geometric limit is ls/(1-z*(1-ls)) -- just "
+            "above ON, NOT the old 1/live_share (ADR-0024 z-correction; z=0.38 from regulation dead "
+            "vs counted stoppage).",
+        ]
+        for win in (hw, "2H_only"):
+            off, on = hrow("4.0", "off", win), hrow("4.0", "on", win)
+            geom = row("silent_marked|overall|pooled_all|hl=4.0|geometric", win)
+            if off is not None and on is not None:
+                gtxt = f" -> geometric ceiling {geom['pct_changed']:.1%}" if geom is not None else ""
+                lines.append(f"- {win}: gross-up off {off['pct_changed']:.1%} -> on(CENTRAL) "
+                             f"{on['pct_changed']:.1%}{gtxt}")
         lines += [
             "",
             "## Outcome-flip secondary metric (ADR-0021 #1; stricter 'different OUTCOME')",
@@ -226,11 +304,25 @@ def write_ledger(prod):
         if c2 is not None:
             lines.append(f"- central (2H_only): outcome-flip {c2['pct_outcome_flip']:.1%} "
                          f"[CI {c2['flip_ci_lo']:.1%}, {c2['flip_ci_hi']:.1%}]")
+        # assumption-vs-sampling: spread of X% across reported knobs vs the central CI width. With
+        # silent held at silent_marked (the model is calibrated to Nate there; none/all are
+        # known-wrong bounds), the assumption spread shrinks relative to sampling (IMPL-8 framing).
+        samp = float(c["ci_hi"] - c["ci_lo"]) if c is not None else float("nan")
+        asm_all = float(allg["pct_changed"].max() - allg["pct_changed"].min())
+        amk = allg[allg["silent"] == "silent_marked"]
+        asm_marked = float(amk["pct_changed"].max() - amk["pct_changed"].min())
         lines += [
             "",
-            "- X% is highly sensitive to the silent treatment + productivity premium -> ships as a "
-            "BAND, not a point.",
-            "- NOT YET LOCKED: the final session SELECTS the rails + CI in docs/decisions.md.",
+            "## Assumption-vs-sampling uncertainty (IMPL-8)",
+            f"- central CI width (sampling): {samp:.1%}.",
+            f"- assumption spread incl. silent (none/marked/all): {asm_all:.1%} "
+            f"-> ratio {asm_all / samp:.1f}x sampling.",
+            f"- assumption spread with silent FIXED at silent_marked: {asm_marked:.1%} "
+            f"-> ratio {asm_marked / samp:.1f}x sampling.",
+            "- silent treatment is a POINT in the headline (silent_marked); none/all are KNOWN-WRONG "
+            "bounds kept only as grid brackets. The headline bands over the legitimate knobs "
+            "(lambda-source, decay half-life, gross-up).",
+            "- NOT YET LOCKED: the final session SELECTS the band + CI in docs/decisions.md.",
             "",
         ]
     else:
@@ -249,7 +341,8 @@ def write_ledger(prod):
             f"-> processed/timewasting_descriptive.parquet",
             f"- pooled rate (dead / played): {pooled_rate:.1%}; mean min/match "
             f"PRE {grp.get('PRE', float('nan')):.2f} / POST {grp.get('POST', float('nan')):.2f}.",
-            "- this same rate feeds the s08 O3 gross-up (above).",
+            "- the gross-up (above) does NOT recur this full rate: only the genuine-stoppage "
+            "fraction z=0.38 of dead time is compensable (ADR-0024 z-correction).",
             "- (board_announced under-allocation Delta = true_stoppage - board_announced is DEFERRED: "
             "needs the SofaScore scrape; board_announced still NULL.)",
             "",
@@ -267,6 +360,7 @@ def main() -> None:
     fig_board_pre_post()
     fig_lb_vs_board()
     fig_sensitivity()
+    fig_productivity_decay()
     write_ledger(prod)
     print("  s09 complete.")
 

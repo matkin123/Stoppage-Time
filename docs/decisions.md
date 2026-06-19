@@ -5,6 +5,87 @@ number and its band must be locked here (with the chosen knob_set) before publis
 
 ---
 
+## ADR-0024 — IMPL-8: omitted-time productivity DECAY (Method A) replaces the premium rails; gross-up central → ON; silent → headline POINT (X% still NOT locked) (2026-06-19)
+
+**Build session, not a lock.** Executed `prompts/impl_8_productivity_decay.md` against the processed
+tables. Rebuilds s08's 2H productivity term as a per-minute exponential decay, flips two central knobs,
+and regenerates the grid + figure for the human checkpoint. **X% is deliberately still NOT locked** (the
+ADR-XXXX HEADLINE template stays blank; the lock is the next, separate session `prompts/lock_headline.md`).
+Upstream FROZEN (s03 calibration; s05 estimator r=0.825; ADR-0019 remodel); s07 untouched.
+
+**Why the decay (reviewer-preempt).** The observed 2H-stoppage λ (0.0816) is ~1.91× the open-play floor
+(0.0427) only because it is measured over short, late, high-urgency windows. Counterfactual (unobserved)
+added minutes should NOT inherit that full end-game premium — the more time we hypothetically add, the
+less productive teams should be. So the λ applied to omitted **2H** minutes decays from the observed
+stoppage rate toward the open-play floor as the omitted window grows. This **replaces** the binary
+`productivity_premium_knobs: [observed, open_play]` rails, which are exactly the two limits of the decay.
+
+**Model (Method A — exponential, half-life parametrized).** Per marginal omitted 2H minute t:
+`lambda(t) = floor + (obs − floor)·0.5^(t/h)`, with closed-form window average over [0,T]
+`avg_lambda(T,h) = floor + (obs − floor)·(1 − exp(−kT))/(kT)`, `k = ln2/h`. `obs` = the 2H-stoppage
+cell rate (START); `floor` = the `__regular__` open-play cell (FLOOR); `h` = half-life (swept). Per match
+`mu_2H = avg_lambda(T_match, h)·olive_2H`. **Decay horizon = the GROSSED-UP clock** (user decision):
+`T_match = olive_2H / live_share_2H`, which self-consistently tracks the active gross-up (off→raw omitted
+clock; on→one-pass grossed clock; geometric→clock/live_share) so horizon and live-minutes never drift.
+Guarded `live_share>0`; recomputed per bootstrap draw (olive varies with the silent estimator-error draw).
+**1H is UNCHANGED** (keeps the observed 1H-stoppage λ); decay applies to the 2H window only.
+
+**Knob change** (`config/params.yaml`): `productivity_premium_knobs` → `productivity_decay_halflife_min:
+[.inf, 8.0, 4.0, 2.0, 0.0]`. **Reported band = h ∈ [2,8] min; central h = 4** (user 2026-06-19).
+`.inf`/`0.0` are regression-test endpoints ONLY (they back out the old two rails). knob_set string now
+`"{silent}|{cond}|{source}|hl={h}|{gw}"`.
+
+**Bootstrap honesty.** The 2H decay is a transform of TWO drawn rates, so each iteration draws BOTH the
+73-goal 2H-stoppage cell AND the 675-goal `__regular__` floor cell (a second per-match cell index), then
+combines via `avg_lambda`. CI now reflects sampling error in both endpoints.
+
+**Two folded-in central flips (confirmed with user 2026-06-19).**
+1. **Gross-up central = ON.** The directive's own logic says stoppage time must compensate for the
+   stoppages within it, so OFF leaves in-stoppage time-wasting uncompensated. Central knob_set is now
+   `silent_marked|overall|pooled_all|hl=4.0|on`. Also REPORTED (not a swept knob): the **geometric
+   ceiling** — the z-discounted fixed point `ls/(1−z·(1−ls))` (see z-correction below), the upper rail
+   above single-pass ON. Written into the summary as a `…|hl=4.0|geometric` row so the ledger traces to
+   a table.
+2. **Silent treatment is a POINT, not a band, in the headline.** `silent_none`/`silent_all` are
+   KNOWN-WRONG (the model is calibrated to Nate at `silent_marked`); kept in the grid as bounds, but the
+   headline reports `silent_marked` and bands only over the legitimate knobs (λ-source, decay half-life,
+   gross-up). With silent fixed, assumption-vs-sampling uncertainty drops from **4.0× → 1.3×** (s09-computed;
+   the prompt's ~1.6× pre-estimate, same direction).
+
+**Gross-up z-correction (user interrogation, 2026-06-19).** The first build recurred the ENTIRE dead share
+`r = 1−live_share ≈ 0.46` as compensable stoppage (implicit `z=1`), which ballooned the geometric ceiling to
+`1/live_share` (34.0%) and over-credited single-pass ON. But most dead time is normal flow (throw-ins,
+prompt goal kicks) that no ref adds back — only GENUINE stoppage recurs. Measured in regulation from
+checkpointed tables: of **44.2 dead min/match**, the s05 estimator counts **16.9 min** as stoppage
+(lower_bound + silent_marked), so the genuine-stoppage fraction is **z = 0.382** (`genuine_stoppage_share`
+in s08; traces to bip_segments + incident_stoppage; residual silent excluded to match the chosen definition;
+user chose `lb+silent_marked` over `lb`-only 0.288). The gross-up now recurs only `z·(1−live_share) ≈ 0.176`:
+one-pass live factor `ls·(1 + z·(1−ls))`, geometric limit `ls/(1 − z·(1−ls))`. Because the recurring ratio
+drops from ~0.46 to ~0.18, the geometric tail **collapses to just above ON** (the user's original instinct
+that the stoppage-within-stoppage tail should be small). The `(1−live_share)` already uses the STOPPAGE-time
+dead share (≈0.46 > regulation's 0.447), so the user's "scale up for added time" is automatic — no extra
+multiplier. Gross-up OFF is unchanged (no compensation), so the endpoint-regression rails stay byte-identical.
+
+**Results (group=all; not a lock, read before selecting).**
+- **Central** `silent_marked|overall|pooled_all|hl=4.0|on`: **1H+2H 23.6% [CI 20.6%, 27.4%]**; 2H_only 16.0%; outcome-flip 12.1% [10.6%, 14.2%].
+- **Decay half-life band (gross-up ON)**: 1H+2H h2 22.2% .. h4 23.6% .. h8 24.9%; 2H_only h2 14.4% .. h4 16.0% .. h8 17.4%.
+- **Gross-up rails (h=4, z=0.382)**: 1H+2H off 21.1% → on 23.6% → geometric 24.2%; 2H_only off 14.1% → on 16.0% → geometric 16.4%.
+- **Endpoint regression (gross-up OFF)** backs out the OLD rails byte-close: h=inf(=observed) 1H+2H 23.8% / 2H_only 17.1%; h=0(=open_play) 2H_only 9.7%. (h=0 1H+2H is **17.0%, not the old 16.3%** — by design the decay floors only the 2H window; 1H keeps observed.)
+- Full reported grid range (legit knobs): 10.8% – 37.3%.
+
+**Gate: PASSED.** Full `pytest` green (26/26): `test_s08_decay_endpoints` (endpoint regression + half-life
+monotonicity) and `test_s08_avg_lambda_decay` (bounds/limits/monotonicity of `avg_lambda`);
+`test_s08_silent_knob_brackets_headline` parses `hl` and drops the geometric row. The z-correction needed
+NO test changes (gross-up OFF rails unchanged; ON/geometric carry no hard-coded assertions). s08 grid +
+`decay_profile.parquet` regenerated; s09 figures (new permanent **f06_productivity_decay.png**) + ledger
+updated; s07 unchanged.
+
+**HUMAN CHECKPOINT next, then STOP — do NOT chain into the lock.** Half-life already decided (central 4,
+band [2,8]); confirm the central X% + band visually and the gross-up-ON / silent-point framing. The lock
+(`prompts/lock_headline.md`) is its own session.
+
+---
+
 ## ADR-0023 — IMPL-7 Parts A.2 + C built: productivity-premium band, O3 gross-up, outcome-flip wired (X% still NOT locked) (2026-06-18)
 
 **Build session, not a lock.** Executed `prompts/impl_7_board_cooling.md` Parts A.2 + C against the

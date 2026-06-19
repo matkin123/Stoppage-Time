@@ -28,7 +28,31 @@ hazard — do NOT overengineer**: `P(≥1)=1−P(0)` already only uses the pre-f
 open-play floor brackets it. These BUILD in **IMPL-7 Part C** so the final session just SELECTS rails.
 Full rationale: `docs/decisions.md` ADR-0021 + `docs/redesign.md` ADDENDUM. **X% still NOT LOCKED.**
 
-**Current unit = the final LOCK** (IMPL-7 Parts A.2 + C DONE 2026-06-18, ADR-0023; R1+R2 DONE).
+**IMPL-8 — omitted-time productivity DECAY — DONE 2026-06-19 (ADR-0024). HUMAN CHECKPOINT PENDING.**
+Built `prompts/impl_8_productivity_decay.md`. Method A exponential decay now lives in s08:
+`avg_lambda(T,h)` ramps the per-match 2H rate from the observed 2H-stoppage cell (0.0816) toward the
+`__regular__` open-play floor (0.0427) over the omitted window; **1H unchanged**; decay horizon = the
+GROSSED-UP clock `T = olive_2H / live_share_2H` (recomputed per bootstrap draw). Knob swapped to
+`productivity_decay_halflife_min: [.inf, 8, 4, 2, 0]` (central **h=4**, band **[2,8]**; `.inf`/`0`
+are regression-only endpoints). Bootstrap now draws BOTH endpoint cells. Two central flips folded in:
+**gross-up central = ON** (+ geometric-ceiling row reported) and **silent = headline POINT
+(silent_marked)**. **z-CORRECTION (2026-06-19, user interrogation):** the gross-up over-credited by
+recurring the FULL dead share (implicit `z=1`); only the genuine-stoppage fraction of dead time recurs.
+Measured z = (lower_bound+silent_marked)/total_dead in regulation = **0.382** (`genuine_stoppage_share`,
+traces to bip_segments + incident_stoppage); gross-up now recurs `z·(1−ls)≈0.18`, collapsing the
+geometric tail to just above ON (was 1/live_share). **Results (NOT a lock): central
+`silent_marked|overall|pooled_all|hl=4.0|on` = 1H+2H 23.6% [CI 20.6%, 27.4%]; 2H_only 16.0%;
+outcome-flip 12.1%.** Decay band 1H+2H 22.2%(h2) .. 23.6%(h4) .. 24.9%(h8). Gross-up rails (h=4,
+z=0.382): off 21.1% → on 23.6% → geometric 24.2%. Endpoints back out the OLD rails byte-close: h=inf
+1H+2H 23.8% / 2H_only 17.1%; h=0 2H_only 9.7% (h=0 1H+2H = 17.0%, not 16.3% — decay floors only 2H, by
+design). Assumption÷sampling 4.0× → **1.3×** with silent fixed. New permanent figure
+**`figures/f06_productivity_decay.png`**; new table `processed/decay_profile.parquet`; **26 pytest green**
+(`test_s08_decay_endpoints`, `test_s08_avg_lambda_decay`). **NEXT: bring the grid + f06 to the user for
+the human checkpoint, then run the LOCK (do NOT lock X% in IMPL-8).**
+
+**→ CURRENT UNIT = the final LOCK** — turnkey prompt **`prompts/lock_headline.md`** (see below).
+
+**THEN — the final LOCK** (IMPL-7 Parts A.2 + C DONE 2026-06-18, ADR-0023; R1+R2 DONE).
 - R1 — announced-board sourcing: **DONE 2026-06-18 (ADR-0020).** YES, free for all six via SofaScore
   incidents API (`injuryTime.length` per half). Findings: `prompts/research_board_findings.md`;
   memory `reference_board_announced.md`.
