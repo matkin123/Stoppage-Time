@@ -100,17 +100,18 @@ def fig_sensitivity():
         return None
     hw = config.params()["counterfactual"]["headline_window"]
     s = pd.read_parquet(path)
-    # Focus the band figure on the central conditioning/source (overall|pooled_all): the axes the
-    # lock SELECTS are silent {none,marked,all} x decay-half-life {2,4,8} x gross-up {off,on}. The
-    # conditioning/source sensitivities barely move X% (ADR-0019) and would make the panel
-    # unreadable. The regression-only endpoints (hl=inf / hl=0.0) and the geometric ceiling row are
-    # dropped here -- they are not part of the reported band.
+    # LOCK (ADR-0025): silent is a calibrated POINT (silent_marked), NOT a plotted sensitivity axis;
+    # silent_none/all are known-wrong bounds excluded from all reported figures. The reported band is
+    # over the LEGITIMATE knobs. This panel fixes the central conditioning/source (overall|pooled_all)
+    # -- those barely move X% (ADR-0019) and would clutter -- and shows the decay-half-life {2,4,8} x
+    # gross-up {off,on} band. Regression-only endpoints (hl=inf/0.0) and the geometric row are dropped.
     parts = s["knob_set"].str.split("|", expand=True)
     s = s.assign(silent=parts[0], cond=parts[1], source=parts[2], hl=parts[3], gw=parts[4])
     s = s[(s["group"] == "all") & (s["window"] == hw) &
+          (s["silent"] == "silent_marked") &
           (s["cond"] == "overall") & (s["source"] == "pooled_all") &
           (s["gw"].isin(["off", "on"])) & (~s["hl"].isin(["hl=inf", "hl=0.0"]))].copy()
-    s["label"] = s["silent"] + " | " + s["hl"] + " | grossup=" + s["gw"]
+    s["label"] = s["hl"] + " | grossup=" + s["gw"]
     s = s.sort_values("pct_changed")
     xerr_lo = (s["pct_changed"] - s["ci_lo"]).clip(lower=0)
     xerr_hi = (s["ci_hi"] - s["pct_changed"]).clip(lower=0)
@@ -119,7 +120,7 @@ def fig_sensitivity():
     ax.set_yticks(range(len(s)))
     ax.set_yticklabels(s["label"], fontsize=7)
     ax.set_xlabel("P(>=1 extra goal) -- share of matches")
-    ax.set_title(f"Counterfactual band, window={hw}, overall|pooled_all (95% CI)")
+    ax.set_title(f"Counterfactual band, window={hw}, silent_marked|overall|pooled_all (95% CI)")
     return _save(fig, "f05_sensitivity_grid.png")
 
 
@@ -213,13 +214,33 @@ def write_ledger(prod):
         s = pd.read_parquet(cf)
         parts = s["knob_set"].str.split("|", expand=True)
         s = s.assign(silent=parts[0], cond=parts[1], source=parts[2], hl=parts[3], gw=parts[4])
-        # the reported grid excludes the regression-only endpoints (hl=inf/0.0) and the geometric
-        # ceiling row; the full-range min/max is over the legitimate reported knobs only.
+        # LOCK (ADR-0025): silent is a SINGLE calibrated estimate (silent_marked, calibrated to Nate
+        # WC2018 ground truth), reported as a POINT -- NOT a sensitivity knob. silent_none/all are
+        # known-wrong bounds kept ONLY as internal monotonicity guardrails in the grid; they are
+        # NEVER reported as a range. The reported assumption range is over the LEGITIMATE knobs
+        # (conditioning x source x decay-half-life x gross-up) with silent FIXED at silent_marked;
+        # regression-only hl endpoints (inf/0.0) and the geometric ceiling row are excluded.
         reported = s[(s["group"] == "all") & (s["window"] == hw) &
+                     (s["silent"] == "silent_marked") &
                      (s["gw"].isin(["off", "on"])) & (~s["hl"].isin(["hl=inf", "hl=0.0"]))].copy()
         allg = reported
-        lo, hi = allg["pct_changed"].min(), allg["pct_changed"].max()
+        joint_lo, joint_hi = allg["pct_changed"].min(), allg["pct_changed"].max()
         central = "silent_marked|overall|pooled_all|hl=4.0|on"
+        cen_cond, cen_src, cen_hl, cen_gw = "overall", "pooled_all", "hl=4.0", "on"
+
+        def per_knob_band(frame):
+            # One-factor-at-a-time: sweep EACH legitimate knob while holding the other three
+            # at central. This is the LEAD band (ADR-0025) -- a defensible "vary one assumption
+            # at a time" range, distinct from (and narrower than) the full joint min-max envelope.
+            sweeps = pd.concat([
+                frame[(frame["source"] == cen_src) & (frame["hl"] == cen_hl) & (frame["gw"] == cen_gw)],
+                frame[(frame["cond"] == cen_cond) & (frame["hl"] == cen_hl) & (frame["gw"] == cen_gw)],
+                frame[(frame["cond"] == cen_cond) & (frame["source"] == cen_src) & (frame["gw"] == cen_gw)],
+                frame[(frame["cond"] == cen_cond) & (frame["source"] == cen_src) & (frame["hl"] == cen_hl)],
+            ])
+            return sweeps["pct_changed"].min(), sweeps["pct_changed"].max()
+
+        band_lo, band_hi = per_knob_band(reported)
 
         def row(knob, win=hw):
             q = s[(s["group"] == "all") & (s["window"] == win) & (s["knob_set"] == knob)]
@@ -232,20 +253,27 @@ def write_ledger(prod):
             "- metric: mu = sum_h lambda_h * omitted_live_h; P(change)=1-exp(-mu); "
             "X%=mean over matches (s08, ADR-0019). No Monte Carlo.",
             f"- headline window: {hw}  (>=1 extra goal anywhere in omitted added time).",
-            f"- full grid range: {lo:.1%} - {hi:.1%} "
-            "-> processed/counterfactual_summary.parquet (group=all, window=" + hw + ")",
+            "- LOCKED ADR-0025 (2026-06-19). Framing: if stoppage time were measured and awarded "
+            "per the rulebook, X% of matches would have ended with a DIFFERENT SCORELINE.",
+            f"- **HEADLINE BAND (lead): {band_lo:.1%} - {band_hi:.1%}** -- one-factor-at-a-time over the "
+            "legitimate knobs (conditioning x source x decay-half-life x gross-up), each swept while the "
+            "other three sit at central; silent FIXED at calibrated silent_marked.",
         ]
         if c is not None:
             lines.append(
-                f"- central ({central}): {c['pct_changed']:.1%} "
-                f"[CI {c['ci_lo']:.1%}, {c['ci_hi']:.1%}]")
+                f"- central point ({central}): {c['pct_changed']:.1%} "
+                f"[95% CI {c['ci_lo']:.1%}, {c['ci_hi']:.1%}]")
+        lines.append(
+            f"- full JOINT min-max envelope (all legitimate knobs varied together): "
+            f"{joint_lo:.1%} - {joint_hi:.1%} "
+            "-> processed/counterfactual_summary.parquet (group=all, window=" + hw + ")")
         if c2 is not None:
             lines.append(f"- same knob, 2H_only window (comparison): {c2['pct_changed']:.1%}")
-        lines.append("- X% by silent treatment (min-max across all other knobs):")
-        for lvl in ("silent_none", "silent_marked", "silent_all"):
-            sub = allg[allg["silent"] == lvl]
-            if not sub.empty:
-                lines.append(f"  - {lvl}: {sub['pct_changed'].min():.1%} - {sub['pct_changed'].max():.1%}")
+        lines.append(
+            "- SILENT treatment is a SINGLE CALIBRATED ESTIMATE (silent_marked, calibrated to Nate "
+            "WC2018 ground truth), reported as a POINT -- NOT a sensitivity knob. silent_none/all are "
+            "known-wrong bounds kept ONLY as internal monotonicity guardrails in the grid; they are "
+            "NOT reported as a range, in the headline or the sensitivity table (ADR-0025).")
 
         # IMPL-8 (ADR-0024): the decay half-life sweep REPLACES the old productivity-premium rails.
         def hrow(hlf, gw, win):
@@ -304,25 +332,32 @@ def write_ledger(prod):
         if c2 is not None:
             lines.append(f"- central (2H_only): outcome-flip {c2['pct_outcome_flip']:.1%} "
                          f"[CI {c2['flip_ci_lo']:.1%}, {c2['flip_ci_hi']:.1%}]")
-        # assumption-vs-sampling: spread of X% across reported knobs vs the central CI width. With
-        # silent held at silent_marked (the model is calibrated to Nate there; none/all are
-        # known-wrong bounds), the assumption spread shrinks relative to sampling (IMPL-8 framing).
+        # assumption-vs-sampling (ADR-0025): silent is FIXED at the calibrated silent_marked point,
+        # so the reported assumption spread is over the LEGITIMATE knobs only (conditioning x source
+        # x decay x gross-up). none/all are known-wrong and not reported, so there is no
+        # "incl. silent" ratio.
         samp = float(c["ci_hi"] - c["ci_lo"]) if c is not None else float("nan")
-        asm_all = float(allg["pct_changed"].max() - allg["pct_changed"].min())
-        amk = allg[allg["silent"] == "silent_marked"]
-        asm_marked = float(amk["pct_changed"].max() - amk["pct_changed"].min())
+        band_width = float(band_hi - band_lo)
+        asm_joint = float(allg["pct_changed"].max() - allg["pct_changed"].min())
+        lock_line = (
+            f"- LOCKED in docs/decisions.md ADR-0025 (2026-06-19): X% = central "
+            f"{c['pct_changed']:.1%} [95% CI {c['ci_lo']:.1%}, {c['ci_hi']:.1%}], window {hw}, "
+            f"knob_set {central}." if c is not None
+            else "- LOCKED in docs/decisions.md ADR-0025 (2026-06-19).")
         lines += [
             "",
-            "## Assumption-vs-sampling uncertainty (IMPL-8)",
-            f"- central CI width (sampling): {samp:.1%}.",
-            f"- assumption spread incl. silent (none/marked/all): {asm_all:.1%} "
-            f"-> ratio {asm_all / samp:.1f}x sampling.",
-            f"- assumption spread with silent FIXED at silent_marked: {asm_marked:.1%} "
-            f"-> ratio {asm_marked / samp:.1f}x sampling.",
-            "- silent treatment is a POINT in the headline (silent_marked); none/all are KNOWN-WRONG "
-            "bounds kept only as grid brackets. The headline bands over the legitimate knobs "
-            "(lambda-source, decay half-life, gross-up).",
-            "- NOT YET LOCKED: the final session SELECTS the band + CI in docs/decisions.md.",
+            "## Assumption-vs-sampling uncertainty (ADR-0025)",
+            f"- central 95% CI width (sampling): {samp:.1%}.",
+            f"- LEAD assumption band, one-factor-at-a-time over the legitimate knobs (silent FIXED at "
+            f"calibrated silent_marked): {band_lo:.1%} - {band_hi:.1%}, width {band_width:.1%} "
+            f"-> ratio {band_width / samp:.1f}x sampling.",
+            f"- full JOINT envelope (all legitimate knobs varied together): {joint_lo:.1%} - "
+            f"{joint_hi:.1%}, width {asm_joint:.1%} -> ratio {asm_joint / samp:.1f}x sampling.",
+            "- silent treatment is reported as a single calibrated POINT, NOT a sensitivity axis: "
+            "silent_none/all are known-wrong and excluded from all reported ranges (ADR-0025). The "
+            "reported model uncertainty is sampling (CI) + the legitimate assumption knobs "
+            "(lambda-source, decay half-life, gross-up, conditioning).",
+            lock_line,
             "",
         ]
     else:

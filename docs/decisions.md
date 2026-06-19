@@ -755,10 +755,73 @@ disagree); fix the s09 f01 figure's extra-time/penalty spike (DC3). The distorti
 (announced-board under-allocation; within-stoppage time-wasting) and cooling-break pure-stoppage are
 IMPL-7, pending the deferred research sessions (`prompts/research_board.md`, `prompts/research_cooling.md`).
 
-## ADR-XXXX — HEADLINE NUMBER (PAUSED — fill after IMPL-6/IMPL-7 re-validate; see ADR-0018 + docs/redesign.md)
-Metric (D1): % of matches with ≥1 extra goal in omitted stoppage = mean(1 − exp(−μ)).
-X% = ____% (95% CI ____–____%). Window: 1H+2H or 2H-only = ____. Central λ source/conditioning: ____
-(default pooled_all / overall). Silent treatment: silent_marked + estimator error (D4).
-Sensitivities: silent none/marked/all; conditioning overall/tied_nontied; source pooled/pre/post.
-Caveats: irreducible silent band (ADR-0017); 1H counterfactual independence assumption (O1); thin PRE
-counts; Nate validates WC2018 only.
+## ADR-0025 — HEADLINE NUMBER LOCKED (2026-06-19)
+
+**The single modeled claim of the article, locked WITH the user (human checkpoint, CLAUDE.md §1/§6).**
+Ran `prompts/lock_headline.md` against the source-of-truth tables (`processed/counterfactual_summary.parquet`,
+verified live, not chat history). No re-build, re-tune, or re-run of s08 to "improve" anything (the s08
+grid is frozen from ADR-0024). Only s09's REPORTING + the figure were changed to reflect the silent
+decision below; the grid/parquet are unchanged.
+
+**Headline framing (the claim).** *If stoppage time were measured and awarded according to the rulebook,
+**X% of matches would have ended with a DIFFERENT SCORELINE*** (≥1 extra goal somewhere in the omitted
+added time). This is the one number that ships with a CI + a sensitivity table, never a bare point.
+
+**Metric (D1, ADR-0019).** X% = mean over matches of P[≥1 extra goal in omitted stoppage] =
+mean(1 − exp(−μ)), μ = Σ_h λ_h · omitted_live_h. Deterministic closed form, no Monte Carlo.
+
+**LOCKED VALUES.**
+- **HEADLINE BAND (lead): X% = 21.1%–26.1%**, central **23.6% (95% CI 20.6%–27.4%)**. Window **1H+2H**.
+  The lead band is **one-factor-at-a-time** over the legitimate knobs (each swept while the other three sit
+  at central; silent fixed at the calibrated point) — a "vary one assumption at a time" range that ships in
+  the lead *alongside* the sensitivity table below. (2H_only = 14.1%–17.4%, central 16.0% [14.0%, 18.5%],
+  reported as a comparison, not the headline.)
+- **Central knob_set: `silent_marked|overall|pooled_all|hl=4.0|on`** (group=all).
+- The wider **full joint envelope** (all legitimate knobs varied together) is **18.6%–27.3%**; the lead uses
+  the tighter, more interpretable one-factor band, with the joint envelope reported as the outer bound.
+
+**Silent treatment — a SINGLE CALIBRATED ESTIMATE, NOT a reported sensitivity (the lock's key decision,
+user 2026-06-19).** silent_marked is calibrated to Nate's WC2018 ground truth (the only high-quality
+external dataset we have; s05 estimator r=0.825, ADR-0017) and is reported as a **POINT**.
+`silent_none`/`silent_all` are **known-wrong** bounds — they signal nothing useful precisely because we
+know they are wrong — and are **NOT reported as a range anywhere**: not in the headline, not in the
+sensitivity table, not in figures. They remain in the s08 grid ONLY as an internal monotonicity guardrail
+(`test_s08_silent_knob_brackets_headline` checks none ≤ marked ≤ all per cell). **This REVISES red-team
+must-fix #1** (which framed the silent axis 10.8%→37.3% as "the dominant uncertainty to name"): the user's
+position, adopted here, is that none/all are not legitimate uncertainty — the calibrated point is the only
+defensible treatment — so the headline's reported uncertainty comes from sampling + the legitimate
+assumption knobs, NOT from the silent axis.
+
+**Reported uncertainty = (a) sampling CI + (b) the legitimate assumption knobs (reported as ranges).**
+- (a) Sampling: 95% CI **[20.6%, 27.4%]** (per-cell Jeffreys-Gamma λ + the silent_marked estimator-error bootstrap), width 6.7%.
+- (b) Legitimate-knob sensitivities (each swept with the others at central, 1H+2H):
+  - **Productivity-decay half-life** h∈[2,8], central h=4 (ADR-0024): **22.2% (h2) .. 23.6% (h4) .. 24.9% (h8)**.
+  - **In-stoppage gross-up** (z=0.382 corrected; central ON): off **21.1%** (conservative rail) → **23.6% (ON, central)** → geometric ceiling **24.2%**.
+  - **λ source**: pooled_all **23.6%** (central) · pooled_pre 26.1% · pooled_post 22.6% · regime_matched 23.8% (D3: no first-principles pre/post λ difference; data agrees within Poisson noise).
+  - **Conditioning**: overall **23.6%** (central) · tied_nontied 23.4% (D2: within noise).
+  - **Full joint legitimate-knob envelope** (silent fixed at marked, cond×source×decay×gross-up): **18.6%–27.3%**.
+- Assumption spread: the **lead one-factor band is 5.0% wide ≈ 0.7× sampling**; the **full joint envelope is
+  8.7% ≈ 1.3× sampling**. Either way the model is robust — the assumptions do not dominate the sampling
+  noise once silent is calibrated.
+
+**Outcome-flip secondary — reported SEPARATELY from the scoreline headline (red-team must-fix #2, user
+confirmed).** Scoreline ("≥1 extra goal") ≈ 24%, distinct from outcome ("the result actually flips",
+winner/draw status changes): **12.1% [10.6%, 14.2%]** (1H+2H) / 8.2% [7.2%, 9.5%] (2H_only). `lead_by_2plus`
+matches cannot flip; conflating "ended differently" with the 23.6% scoreline number is the most attackable
+sentence, so the two are always stated apart.
+
+**Caveats (carried verbatim; load-bearing).**
+- **Silent calibration, not a band (ADR-0017).** The silent component cannot be measured precisely with free
+  StatsBomb data; we ship the Nate-calibrated point, not a none↔all band (see the silent decision above).
+- **1H counterfactual independence (O1).** A 1H extra goal is treated as a bonus increment; game state is not
+  propagated across the 1H window.
+- **Thin PRE counts.** pooled_pre rides wide CIs (few PRE matches); it is a sensitivity, not the central.
+- **Coverage (must survive into the article).** Nate validates **WC2018 ONLY**. POST (where the headline
+  lives; Copa ~25.3 / AFCON ~23.5 min true_stoppage, ~2× WC2018 silent) is validated only INDIRECTLY — via
+  the frozen-2018 estimator constants + the WC2022 Opta BIP calibration point.
+- **board_announced under-allocation Δ (A.1) is DEFERRED and DESCRIPTIVE-ONLY** — never in X%
+  (`prompts/scrape_board_announced.md`; board_announced still NULL).
+
+**Gate.** The locked claim is a BAND + CI + sensitivity table, not a bare point (CLAUDE.md §1). pytest stays
+green (26/26; no s08 change; s09 reporting/figure edits assert nothing). **The modeling pipeline is DONE**;
+the only optional remaining unit is the deferred descriptive board_announced scrape.

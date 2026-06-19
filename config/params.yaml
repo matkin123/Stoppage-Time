@@ -109,8 +109,12 @@ counterfactual:
   # Silent-treatment knob (IMPL-4): how much of the silent dead-time bucket is credited as
   # ADDABLE stoppage. silent_none = hard lower bound (lb only); silent_marked = the IMPL-3
   # marker-gated central estimate (lb + silent_marked_s + window-scaled residual); silent_all
-  # = ungated over-counting upper bound (lb + silent_all_s). The spread across these IS the
-  # headline's sensitivity to the irreducible silent uncertainty (ADR-0015/0016).
+  # = ungated over-counting upper bound (lb + silent_all_s).
+  # LOCK (ADR-0025): silent_marked is a SINGLE calibrated estimate (calibrated to Nate WC2018)
+  # and is the only level reported -- as a POINT, never a range. silent_none/all are known-wrong
+  # bounds kept ONLY as internal monotonicity guardrails (test_s08_silent_knob_brackets_headline);
+  # they are NOT a reported sensitivity axis. Reported model uncertainty = sampling CI + the
+  # legitimate knobs (lambda-source, decay half-life, gross-up, conditioning).
   true_stoppage_knobs:
     - silent_none
     - silent_marked

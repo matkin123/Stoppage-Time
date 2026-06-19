@@ -3,7 +3,20 @@
 Read `CLAUDE.md §6` first: **one self-contained unit per session, then stop.** Do not chain
 these items into one marathon session.
 
-**AUTHORITATIVE POINTER (2026-06-18) — HEADLINE MODEL REDESIGN IN FLIGHT; X% LOCK STILL PAUSED.**
+**HEADLINE LOCKED — 2026-06-19 (ADR-0025). THE MODELING PIPELINE IS DONE.** X% = **23.6%
+(95% CI 20.6%–27.4%)**, window **1H+2H**, central knob_set `silent_marked|overall|pooled_all|hl=4.0|on`.
+Framing: *if stoppage time were measured and awarded per the rulebook, ~24% of matches would have ended
+with a DIFFERENT SCORELINE.* Reported with a sensitivity table over the LEGITIMATE knobs (decay
+half-life 22–25%, gross-up off/on/geom 21.1/23.6/24.2%, λ source 22.6–26.1%, conditioning 23.4–23.6%;
+joint envelope 18.6–27.3%) + the sampling CI. **Outcome-flip secondary reported separately: 12.1%
+[10.6%, 14.2%]** (scoreline ≠ outcome). **KEY LOCK DECISION (user 2026-06-19): silent treatment is a
+SINGLE CALIBRATED ESTIMATE (silent_marked, calibrated to Nate), reported as a POINT — NOT a sensitivity
+range.** silent_none/all are known-wrong bounds, kept ONLY as an internal grid guardrail; never reported
+as a range (this REVISES red-team must-fix #1). s09 reporting + f05 figure updated accordingly; ADR-0025
+written; 26/26 pytest green. **Only optional remaining unit: the DEFERRED descriptive board_announced
+scrape (`prompts/scrape_board_announced.md`) — never enters X%.** Everything below is HISTORY.
+
+**AUTHORITATIVE POINTER (2026-06-18) — HEADLINE MODEL REDESIGN IN FLIGHT; X% LOCK STILL PAUSED. [SUPERSEDED — LOCKED ADR-0025 above.]**
 Full spec: **`docs/redesign.md`**. **IMPL-6 DONE — RATIFIED 2026-06-18 (ADR-0019).** The closed-form
 any-extra-goal remodel is built and validated (see ADR-0019 for the grid + the TWO-TEAM-rate trap):
 W/D/L Monte Carlo replaced by `mu = sum_h lambda_h * omitted_live_h`, `P(change)=1-exp(-mu)`,
@@ -50,7 +63,8 @@ design). Assumption÷sampling 4.0× → **1.3×** with silent fixed. New permane
 (`test_s08_decay_endpoints`, `test_s08_avg_lambda_decay`). **NEXT: bring the grid + f06 to the user for
 the human checkpoint, then run the LOCK (do NOT lock X% in IMPL-8).**
 
-**→ CURRENT UNIT = the final LOCK** — turnkey prompt **`prompts/lock_headline.md`** (see below).
+**→ CURRENT UNIT = DONE.** The final LOCK ran 2026-06-19 (ADR-0025). No modeling unit remains; the only
+optional follow-up is the deferred descriptive board_announced scrape (`prompts/scrape_board_announced.md`).
 
 **THEN — the final LOCK** (IMPL-7 Parts A.2 + C DONE 2026-06-18, ADR-0023; R1+R2 DONE).
 - R1 — announced-board sourcing: **DONE 2026-06-18 (ADR-0020).** YES, free for all six via SofaScore
