@@ -45,9 +45,42 @@ Full rationale: `docs/decisions.md` ADR-0021 + `docs/redesign.md` ADDENDUM. **X%
   Turnkey scrape unit: **`prompts/scrape_board_announced.md`** (SofaScore incidents, 314 matches,
   ~3 h rate-limited; ADR-0020 API). Δ = `true_stoppage − board_announced` is a DESCRIPTIVE distortion
   only (never calibrated into X%). Run as its own session before/independent of the lock.
-- **Final session (NEXT) — lock X% + CI + sensitivity band** in `docs/decisions.md` (fill the ADR-XXXX
-  HEADLINE template), eyes open: just SELECT the rails (silent treatment, productivity-premium rail,
-  window, λ source) from the s08 grid + ledger. Nothing left to BUILD.
+- **RED-TEAM the methodology — DONE 2026-06-18.** Findings: `prompts/redteam_methodology_findings.md`.
+  **Verdict: publishable WITH CAVEATS — no FATAL issues.** The central object is sound (realized
+  2H-stoppage goal counts are Poisson, var/mean=0.99) and magnitudes match Opta/538. The exposure is
+  framing, not arithmetic. **MUST-FIX items the LOCK must absorb (all anticipated by the docs; the job
+  is to LEAD with them, not just report alongside):**
+  1. **Lead with the BAND ≈16–24%, not the 23.8% point.** Observed stoppage λ is endogenous to game
+     state (over-states); `[20.3,28.0]` is within-knob CI only — the silent axis (12.5%→36.4%) is the
+     dominant uncertainty and must be named.
+  2. **Separate scoreline from outcome in the wording.** "≥1 extra goal in ~24%" vs "result flips in
+     ~12.2%". 32.7% of the 23.8% mass is `lead_by_2plus` matches that cannot flip. "Ended differently"
+     attached to 23.8% is the most attackable sentence.
+  3. **Carry the COVERAGE caveat verbatim:** Nate validates WC2018 only; POST (esp. Copa 25.3 / AFCON
+     23.5 min true_stoppage, ~2× WC2018 silent) is validated only indirectly (frozen-2018 estimator
+     constants + the WC2022 Opta BIP point). That flag must survive into the headline ADR.
+  Nice-to-have: reframe the Poisson justification (cite late-goal non-homogeneity, not Maher/Dixon-Coles);
+  report pre/post X% split (PRE 26.1 / POST 22.8 — kills the composition-artifact objection); cite the
+  post-directive Bundesliga under-addition study as external support for POST omitted-time>0;
+  (optional, descriptive) re-derive shot subtype for the 96 stoppage goals to state the penalty share.
+  **TWO red-team findings DOWNGRADED 2026-06-19 (SERIOUS→COSMETIC), both verified read-only:**
+  - **S4 (BIP gap-rule transfer) — DEFUSED.** The 20s rule's premise is dense active logging, and
+    event-logging density is constant across all six tournaments (62.6 events/live-min ±4%); active
+    inter-event gaps have median 0.70s / q99 6.0s, so the 20s cut is ~3× past q99 (0.26% of gaps ≥20s)
+    — ADR-0009's G∈[15,25] sweep holds everywhere. live_share's Copa/AFCON dip (0.43/0.47 vs ~0.51–0.56)
+    is real football (more dead time), NOT a logging artifact, and runs conservative for X%. No longer
+    a must-fix; cite the density-uniformity as a defense.
+  - **S5 (penalty composition) — interpretation corrected (per user).** Elevated stoppage-penalty
+    incidence is NOT referees applying a different threshold; refs are consistent across normal/stoppage
+    time. The higher rate is teams playing more aggressively (open-field play), consistently refereed —
+    so penalties are aggression/flow-driven and partly transplantable, not a "different-refereeing"
+    artifact. The residual (does that aggression persist in omitted/decided-game minutes?) just folds
+    into S2's productivity-premium band; the lumpiness worry is already defused by C1 (counts incl.
+    penalties are Poisson, var/mean 0.99). Penalty share is now a NICE-TO-HAVE descriptive diagnostic.
+- **THEN — lock X% + CI + sensitivity band** — turnkey prompt **`prompts/lock_headline.md`**.
+  Fill the ADR-XXXX HEADLINE template in `docs/decisions.md`, eyes open: just SELECT the rails (silent
+  treatment, productivity-premium rail, window, λ source) from the s08 grid + ledger. HUMAN CHECKPOINT —
+  decide WITH the user. Nothing left to BUILD.
 Each is self-contained; **`docs/redesign.md`** is the full spec.
 **Everything below this line is HISTORY (IMPL-0→IMPL-6, all DONE).**
 
