@@ -221,9 +221,11 @@ def write_ledger(prod):
         ]
         if c is not None:
             lines.append(f"- central ({hw}): outcome-flip {c['pct_outcome_flip']:.1%} "
+                         f"[CI {c['flip_ci_lo']:.1%}, {c['flip_ci_hi']:.1%}] "
                          f"(vs scoreline headline {c['pct_changed']:.1%})")
         if c2 is not None:
-            lines.append(f"- central (2H_only): outcome-flip {c2['pct_outcome_flip']:.1%}")
+            lines.append(f"- central (2H_only): outcome-flip {c2['pct_outcome_flip']:.1%} "
+                         f"[CI {c2['flip_ci_lo']:.1%}, {c2['flip_ci_hi']:.1%}]")
         lines += [
             "",
             "- X% is highly sensitive to the silent treatment + productivity premium -> ships as a "

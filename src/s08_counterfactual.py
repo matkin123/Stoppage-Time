@@ -284,6 +284,10 @@ def main() -> None:
         cell_valid = (cell_exp > 0).astype(float)
         sigma = sigma_full_min if ts_knob == "silent_marked" else 0.0
         boot = {w: {g: np.empty(B) for g in group_masks} for w in mu}
+        # parallel bootstrap of the outcome-flip metric. outcome_flip() is pure arithmetic on the
+        # drawn mu (no RNG draws), so adding it here does NOT perturb the stream -> the scoreline
+        # X% and its CI are byte-identical to before (ADR-0008 invariant preserved).
+        boot_flip = {w: {g: np.empty(B) for g in group_masks} for w in mu}
         for b in range(B):
             g = rng.gamma(cell_count + 0.5, 1.0 / cell_exp_safe) * cell_valid
             lam1, lam2 = g[cellidx["1H"]], g[cellidx["2H"]]
@@ -296,8 +300,10 @@ def main() -> None:
             mub = {"2H_only": lam2 * ol2, "1H+2H": lam1 * ol1 + lam2 * ol2}
             for w in mu:
                 pcb = p_change(mub[w])
+                flipb = outcome_flip(mub[w])
                 for gl, mask in group_masks.items():
                     boot[w][gl][b] = pcb[mask].mean()
+                    boot_flip[w][gl][b] = flipb[mask].mean()
 
         for w in mu:
             pc = p_change(mu[w])
@@ -309,6 +315,8 @@ def main() -> None:
                     "pct_outcome_flip": float(flip[mask].mean()),
                     "ci_lo": float(np.quantile(boot[w][gl], 0.025)),
                     "ci_hi": float(np.quantile(boot[w][gl], 0.975)),
+                    "flip_ci_lo": float(np.quantile(boot_flip[w][gl], 0.025)),
+                    "flip_ci_hi": float(np.quantile(boot_flip[w][gl], 0.975)),
                     "n_matches": int(mask.sum()),
                 })
             for m, pcv in zip(eligible, pc):
@@ -335,7 +343,7 @@ def main() -> None:
         r = c_all.iloc[0]
         print(f"\n  CENTRAL ({central}): {headline_window} X={r['pct_changed']:.3f} "
               f"ci=[{r['ci_lo']:.3f},{r['ci_hi']:.3f}]; 2H_only X={central_2h_only[central]:.3f}; "
-              f"outcome-flip {r['pct_outcome_flip']:.3f}")
+              f"outcome-flip {r['pct_outcome_flip']:.3f} ci=[{r['flip_ci_lo']:.3f},{r['flip_ci_hi']:.3f}]")
 
     # ADR-0021 Part C band: at the central silent/conditioning/source, the productivity-premium
     # rails (open_play=LOWER, observed=UPPER) bracket the headline; the O3 gross-up raises it.
