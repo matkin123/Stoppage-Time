@@ -111,6 +111,7 @@ def load():
     seg = pd.read_parquet(config.INTERIM / "bip_segments.parquet")
     state = pd.read_parquet(config.INTERIM / "match_state.parquet")
     ls = pd.read_parquet(config.PROCESSED / "stoppage_live_share.parquet")
+    ts = pd.read_parquet(config.INTERIM / "true_stoppage.parquet")
 
     tour = matches.set_index("match_id")["tournament"]
 
@@ -120,6 +121,13 @@ def load():
     scatter = pd.DataFrame({"lb_min": lb, "played_min": played}).dropna()
     scatter["tournament"] = tour
     scatter = scatter.reset_index().rename(columns={"index": "match_id"})
+
+    # per-match scatter table -- y = full model estimate (true_stoppage_s, the
+    # silent_marked-calibrated estimator: lower_bound + marker-gated silent + residual)
+    est = ts.set_index("match_id")["true_stoppage_s"] / 60
+    scatter_est = pd.DataFrame({"est_min": est, "played_min": played}).dropna()
+    scatter_est["tournament"] = tour
+    scatter_est = scatter_est.reset_index().rename(columns={"index": "match_id"})
 
     # goals -> custom bucket (regulation periods only)
     g = goals[goals["period"].isin([1, 2])].copy()
@@ -138,8 +146,8 @@ def load():
         ["match_id", "tournament", "stoppage_seconds", "live_seconds"]].copy()
 
     state = state.merge(matches[["match_id", "tournament"]], on="match_id", how="left")
-    return dict(matches=matches, tour=tour, scatter=scatter, goals=g, live=live,
-                reg=reg, stop=stop, state=state)
+    return dict(matches=matches, tour=tour, scatter=scatter, scatter_est=scatter_est,
+                goals=g, live=live, reg=reg, stop=stop, state=state)
 
 
 def scope_ids(d, key):
@@ -222,6 +230,28 @@ def _scatter(ax, sc, title):
     ax.text(0.97, 0.04,
             f"{pct_above:.0%} of matches above the line\n"
             f"(proven stoppage > time played)\nn={above}/{len(sc)}",
+            transform=ax.transAxes, ha="right", va="bottom", fontsize=7,
+            bbox=dict(boxstyle="round", fc="white", ec="0.6", alpha=0.85))
+
+
+def _scatter_estimate(ax, sc, title):
+    ax.scatter(sc["played_min"], sc["est_min"], s=14, alpha=0.55, color=REG_COLOR)
+    if len(sc):
+        lim = max(sc["played_min"].max(), sc["est_min"].max()) + 1
+        above = int((sc["est_min"] > sc["played_min"]).sum())
+        pct_above = above / len(sc)
+    else:
+        lim, above, pct_above = 1, 0, float("nan")
+    ax.plot([0, lim], [0, lim], "k--", lw=1, label="played = estimated stoppage")
+    ax.set_xlim(0, lim)
+    ax.set_ylim(0, lim)
+    ax.set_xlabel("time played in stoppage (min)")
+    ax.set_ylabel("estimated stoppage time (model, min)")
+    ax.set_title(title, fontsize=9)
+    ax.legend(fontsize=6, loc="upper left")
+    ax.text(0.97, 0.04,
+            f"{pct_above:.0%} of matches above the line\n"
+            f"(estimated stoppage > time played)\nn={above}/{len(sc)}",
             transform=ax.transAxes, ha="right", va="bottom", fontsize=7,
             bbox=dict(boxstyle="round", fc="white", ec="0.6", alpha=0.85))
 
@@ -326,6 +356,10 @@ def main():
     _scatter(ax, d["scatter"], "All tournaments")
     _save(fig, "agg_01_scatter_lb_vs_played.png")
 
+    fig, ax = plt.subplots(figsize=(7, 7))
+    _scatter_estimate(ax, d["scatter_est"], "All tournaments")
+    _save(fig, "agg_01_scatter_estimate_vs_played.png")
+
     fig, ax = plt.subplots(figsize=(10, 5.5))
     _bar_buckets(ax, productivity_by_bucket(d, scope_ids(d, "all")), "All tournaments")
     _save(fig, "agg_02_productivity_by_bucket.png")
@@ -342,6 +376,9 @@ def main():
     small_multiples(d, _scatter, _scatter_data,
                     "tour_01_scatter_lb_vs_played.png",
                     "Incident lower bound vs time played in stoppage (per tournament)")
+    small_multiples(d, _scatter_estimate, _scatter_est_data,
+                    "tour_01_scatter_estimate_vs_played.png",
+                    "Estimated stoppage time (model) vs time played in stoppage (per tournament)")
     small_multiples(d, _bar_buckets, productivity_by_bucket,
                     "tour_02_productivity_by_bucket.png",
                     "Goals per played minute by match bucket (per tournament)")
@@ -361,6 +398,10 @@ def main():
 
 def _scatter_data(d, ids):
     return d["scatter"][d["scatter"]["match_id"].isin(ids)]
+
+
+def _scatter_est_data(d, ids):
+    return d["scatter_est"][d["scatter_est"]["match_id"].isin(ids)]
 
 
 def write_ledger(d, tab):
