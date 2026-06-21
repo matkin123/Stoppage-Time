@@ -8,6 +8,13 @@ Headline target: **"Stoppage time is a sham; measured properly, X% of matches wo
 differently."** `X%` is the one modeled claim — it ships with a confidence interval and a
 sensitivity table, not a point estimate.
 
+**LOCKED (ADR-0025, 2026-06-19): X% = 23.6% [95% CI 20.6%, 27.4%]**, window 1H+2H, central
+knob_set `silent_marked|overall|pooled_all|hl=4.0|on`. Framing: *if stoppage time were measured
+and awarded per the rulebook, ~24% of matches would have ended with a DIFFERENT SCORELINE* (≥1
+extra goal in the omitted added time). The stricter "different RESULT" (winner/draw flips) is
+**12.1% [10.6%, 14.2%]** — always reported separately. Lead assumption band 21.1%–26.1%; full
+joint envelope 18.6%–27.3%. The modeling pipeline is DONE; `docs/decisions.md` is authoritative.
+
 Standard of proof: **every number traces to a script + a checkpointed table + a documented
 assumption.** If a figure can't be traced that way, it doesn't go in the article.
 

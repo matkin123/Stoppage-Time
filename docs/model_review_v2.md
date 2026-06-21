@@ -48,6 +48,18 @@ different *scoreline*, 23.6%) is strictly weaker than "the winner or the draw ac
 90-minute mark; we treat those as unflippable, so they can change scoreline but not result.
 Conflating the two would overstate the claim, so the two numbers are always reported separately.
 
+**The objection this most often draws — and the answer (read first).** The single most common
+pushback is: *"if you added the missing minutes, teams would be less productive per minute — you
+can't price new time at the urgent end-of-game rate."* I agree in principle, and the model is built
+around that agreement: omitted minutes are **not** priced at the observed second-half-stoppage rate.
+Instead, each marginal omitted second-half minute's scoring rate **decays** from that rate (0.0816
+goals/live-min) back toward the open-play floor (0.0427) as the hypothetical added window grows —
+the more time we hypothetically add, the less productive each further minute is assumed to be. The
+decay half-life is an explicit, swept knob (`h ∈ [2, 8]` min, central `h = 4`), and it moves the
+headline only between **22.2% and 24.9%**. The floor is the open-play rate, so even maximal decay
+never prices added minutes below match-average pace — they are still football. This is the subject of
+**§4.1**, which is therefore one of the two sections (with §2) most worth your scrutiny.
+
 ---
 
 ## 2. The data, its gaps, and how we resolve them
@@ -269,11 +281,13 @@ and the conditions under which it breaks.
 
 ### 4.1 Productivity transfer and the late-game decay
 
-**Takeaway.** Every omitted minute must be assigned a goal rate. Late-game minutes are observably
-more productive than average — but we do *not* assume the newly-added minutes inherit the full
-late-game premium. Their rate **decays** from the observed in-stoppage rate back toward the
-open-play rate as the hypothetical added window grows. The speed of that decay (its half-life) is
-the reported productivity band.
+**Takeaway.** This is the model's answer to the most common objection (flagged in §1): *added
+minutes should be less productive than the urgent end-of-game minutes we observe.* Every omitted
+minute must be assigned a goal rate. Late-game minutes are observably more productive than average —
+but we do *not* assume the newly-added minutes inherit the full late-game premium. Their rate
+**decays** from the observed in-stoppage rate back toward the open-play rate as the hypothetical
+added window grows. The speed of that decay (its half-life) is the reported productivity band, and
+it is the explicit knob that prices the objection in.
 
 First, the motivation. Goals do not arrive at a constant rate through a match: the per-live-minute
 scoring rate climbs through the regulation buckets, and the two stoppage windows are higher still
