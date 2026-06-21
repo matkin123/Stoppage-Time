@@ -799,6 +799,14 @@ assumption knobs, NOT from the silent axis.
   - **In-stoppage gross-up** (z=0.382 corrected; central ON): off **21.1%** (conservative rail) → **23.6% (ON, central)** → geometric ceiling **24.2%**.
   - **λ source**: pooled_all **23.6%** (central) · pooled_pre 26.1% · pooled_post 22.6% · regime_matched 23.8% (D3: no first-principles pre/post λ difference; data agrees within Poisson noise).
   - **Conditioning**: overall **23.6%** (central) · tied_nontied 23.4% (D2: within noise).
+  - **Stage (group vs knockout) — robustness, NOT a knob.** Stoppage-time productivity does not differ
+    between group-stage and elimination matches, so X% keeps a single pooled λ rather than a stage term.
+    2H-stoppage goals/live-min: group **0.0847 [0.064, 0.110]** (n=56, 660.8 live-min) vs elim **0.0727
+    [0.042, 0.117]** (n=17, 233.7 live-min); rate ratio group/elim = **1.17, binomial p=0.69**. CIs overlap
+    in every phase/metric and the point estimate leans (non-significantly) *higher* in group stage — the
+    opposite of the "knockouts are more frantic" intuition. Adding an elimination covariate would fit noise,
+    shrink per-cell n, and add a researcher degree-of-freedom right at the lock; pooling is the defensible
+    choice. (Exploration only, 2026-06-21; no code or grid change.)
   - **Full joint legitimate-knob envelope** (silent fixed at marked, cond×source×decay×gross-up): **18.6%–27.3%**.
 - Assumption spread: the **lead one-factor band is 5.0% wide ≈ 0.7× sampling**; the **full joint envelope is
   8.7% ≈ 1.3× sampling**. Either way the model is robust — the assumptions do not dominate the sampling
