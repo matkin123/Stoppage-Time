@@ -141,7 +141,10 @@ def fig_productivity_decay():
     tmax = max(12.0, float(np.nanmax(T)) if len(T) else 12.0)
     curves = [(2.0, "tab:red"), (4.0, "tab:blue"), (8.0, "tab:orange")]
 
-    fig, (axL, axR) = plt.subplots(1, 2, figsize=(13, 5))
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(14, 5))
+    # extra horizontal gap so the left chart's right-hand twin-axis label does not
+    # collide with the right chart's left-hand y-axis label
+    fig.subplots_adjust(wspace=0.42)
 
     # left: per-marginal-minute lambda(t) = floor + (obs-floor)*0.5**(t/h)
     t = np.linspace(0.0, tmax, 240)
