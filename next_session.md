@@ -3,6 +3,139 @@
 Read `CLAUDE.md §6` first: **one self-contained unit per session, then stop.** Do not chain
 these items into one marathon session.
 
+---
+
+## DONE + RE-LOCKED (2026-06-25) — HEADLINE = 24.8% scoreline / 13.0% flip (ADR-0031). Method 2 + PRE celebration allowance ADOPTED.
+
+**User-approved adoption (human checkpoint).** Both measured-but-pending changes are now PRODUCTION and the
+headline is RE-LOCKED. Full record: `docs/decisions.md` **ADR-0031** (supersedes ADR-0025's numbers). The two
+upstream changes: **ADR-0029** (Method 2 same-half live share/z) + **ADR-0030** (PRE-only celebration
+allowance, `residual_silent_pre_s=94.1`).
+
+**What was run:** `python run.py --stage 06b → 08 → 09` (s05 already re-run for the allowance). Regenerated
+`processed/counterfactual*.parquet`, `decay_profile.parquet`, `figures/f0*.png`, `docs/numbers_ledger.md`.
+**pytest 11 green** — `test_s08_decay_endpoints` constants refreshed to the adopted combined rails
+(0.241/0.175/0.099; were Method-2-only 0.246/0.179/0.101).
+
+**LOCKED VALUES (regenerated grid, group=all, 1H+2H, `silent_marked|overall|pooled_all|hl=4.0|on`):**
+- **Scoreline X% = 24.8% [95% CI 21.7%, 28.6%]**; **outcome-flip 13.0% [11.3%, 15.1%]** (reported separately).
+- 2H_only: scoreline 17.0% [15.0%, 19.5%], flip 8.9% [7.9%, 10.3%].
+- Lead one-factor band **21.4%–27.3%**; full joint envelope **18.9%–28.6%**; sampling CI width 6.9%.
+- Decay band 1H+2H 23.3%(h2)/24.8%(h4)/26.1%(h8); gross-up off/on/geom 21.4/24.8/26.0%; λ-source
+  pooled_all 24.8 · pre 27.3 · post 23.7 · regime 24.9; conditioning overall 24.8 · tied_nontied 24.5.
+
+**Why it moved (23.6%→24.8%):** Method 2 alone +1.7 pp (25.3%); PRE celebration allowance alone −0.5 pp;
+net 24.8%/13.0%. Entire move is PRE — **POST `true_stoppage` byte-identical** (max|Δ|=0.000000 / 199 POST
+matches). Both central and envelope stay inside the previously published outer bound. Estimator improved:
+r 0.825→0.875, MAE 2.44→1.77 (WC2018 = all PRE). Silent treatment / caveats / coverage UNCHANGED from ADR-0025.
+
+### → NEXT UNIT (editorial refresh, NOT modeling): re-render hand-authored prose/figures to 24.8%/13.0%.
+The canonical source of truth (parquet, ledger, ADR, CLAUDE.md) is re-locked. These DERIVATIVE artifacts still
+hard-code the OLD 23.6%/12.1% and must be refreshed before publishing (grep "23.6"/"12.1"/"20.6"/"27.4"):
+`docs/substack_post.md`, `docs/model_review_v2.md`, `docs/model_review_v3.md`, `docs/model_review_v4_ray.md`,
+`docs/DEP_methods_substack.md`, `src/figures_requested.py` / `src/fig_*.py`. (Some — `bip_headline_sensitivity`,
+`method2_samehalf` — cite 23.6% as the historical BASELINE they compare against; those are correct as history,
+verify before changing.) Do as its own session per CLAUDE.md §6.
+
+---
+
+## SUPERSEDED (2026-06-24) — TEST METHOD 2 (same-half live share + same-half gross-up). [DONE — see ADR-0028 above.]
+
+**Read `docs/decisions.md` ADR-0027 first** — it records why we're here. The s08 gross-up has an
+ASYMMETRY: it converts omitted added-time CLOCK → omitted LIVE minutes using a **match/window-specific
+live share** (`lsw`, the stoppage-window in-play fraction) but a **pooled whole-match scalar z=0.382**
+for the time-wasting re-credit. ADR-0027 already tested **Method 1** (make z window-specific by
+re-running the s05 attribution clipped to `period_s>2700`): it shifts central X% ~−0.2 pp (inside the
+gross-up band [21.1%, 24.2%]) and, surprisingly, LOWERS the showcase match Spain–England because that
+match's added-time deadness is UNMARKED (window z₂H = 0.008), so the marker-gated estimator can't see
+it. Method 1 inherits low signal / high skew from a 5–11 min window and just re-expresses the locked
+`silent_marked` vs `silent_all` axis at window scope. **Method 2 is the more defensible fix.**
+
+### What Method 2 is (the user's spec, verbatim intent)
+Assume the OMITTED minutes look like the **average SAME-HALF minute** — for BOTH the live share AND the
+gross-up z. **"Same-half" = that half's REGULAR play + that half's PLAYED stoppage combined**:
+- 1H omitted stoppage → calibrate to ALL of period 1 (regulation 0–45:00 **plus** the 1H added time
+  that was actually played).
+- 2H omitted stoppage → calibrate to ALL of period 2 (regulation **plus** the 2H added time that was
+  actually played).
+
+Rationale (why this beats Method 1): it is calibrated to the specific teams on the day, it captures 2H
+fatigue/subs, and it rests on a 45+ min base instead of a few skewed minutes — sidestepping Method 1's
+(1) low-signal/high-skew window and (2) the live-share-specific-but-z-pooled asymmetry. Both factors now
+come from the same reference period.
+
+### Exactly what to compute (per match, per half h∈{1H,2H})
+Everything traces to existing parquet — NO re-run of s01–s07 needed.
+
+1. **Same-half live share `ls_half[m,h]`** — from `interim/bip_segments.parquet` (cols `match_id,
+   period, start_s, end_s, in_play`). For period p (1→1H, 2→2H): `dur = end_s - start_s`;
+   `ls_half = Σ dur[in_play] / Σ dur`, over ALL segments of that period (do NOT clip at 2700 — the
+   whole played half). This REPLACES the stoppage-window `lsw = ls_ratio[(m,h)]` that s08 reads from
+   `stoppage_live_share.parquet`.
+2. **Same-half gross-up `z_half[m,h]`** — counted addable stoppage ÷ total dead time, over the whole
+   half, matching `genuine_stoppage_share` (s08 line 89) but per (match,period) instead of pooled:
+   - `dead[m,h] = Σ dur where NOT in_play`, over that period (from bip_segments, as above).
+   - `counted[m,h] = lower_bound_s + silent_marked_s` for that `(match_id, period)` from
+     `interim/incident_stoppage.parquet`. **EXCLUDE `residual_silent_s`** (the pooled z excludes it —
+     it's a frozen estimator constant, not a per-event mechanism; match that definition).
+   - `z_half = counted / dead`. This REPLACES the scalar `z_genuine` (0.382) in the gross-up.
+3. **Rewire the closed form** (clone the math from `src/s08_counterfactual.py main()`, central knob_set
+   only — `silent_marked|overall|pooled_all|hl=4.0|on`, windows 1H+2H and 2H_only):
+   - true_stoppage `tsw` and played `plw` UNCHANGED (`ts_window_min`, `played`). Method 2 only changes
+     the CLOCK→LIVE conversion + the decay horizon.
+   - gross-up factor (was `flw = lsw*(1 + z_genuine*(1-lsw))`): use
+     **`flw = ls_half*(1 + z_half*(1 - ls_half))`** per (match,half).
+   - `olive[h] = max(0, tsw - plw) * flw`.
+   - decay horizon (was `T2 = olive_2H / ls2`): use **`T2 = olive_2H / ls_half[2H]`**.
+   - `avg2 = avg_lambda(T2, 4.0, obs2, floor2)`; `mu_1H+2H = lam1*olive_1H + avg2*olive_2H`;
+     `mu_2H_only = avg2*olive_2H`; `P = 1 - exp(-mu)`; `X% = mean(P)`.
+   - **λ rates (`lam1`, `obs2`, `floor2`) stay as the pooled cells** — Method 2 changes only the
+     live-share/z conversion, not the goals-per-live-minute population rates.
+   - outcome-flip: reuse `outcome_flip()` exactly (tied@90 → P(mu); lead_by_1@90 → P(mu/2);
+     lead_by_2plus → 0), keyed on `match_state.state_at_90`.
+
+### Deliverables (report, do not lock)
+1. **Headline:** central X% **scoreline** (1H+2H and 2H_only) and **outcome-flip**, vs the LOCKED
+   23.6% scoreline / 12.1% flip and vs Method 1 (~23.4%). State whether Method 2 stays inside the
+   gross-up band **[21.1%, 24.2%]** or moves out of it.
+2. **Spain–England (Euro 2024 final)** specifically: omitted time (min), omitted LIVE minutes, P
+   scoreline, P flip — under Method 2 vs the locked central (19.6% scoreline / 10.3% flip) vs Method 1
+   (17.8% / 9.3%). EXPECTED direction: Method 2 should RAISE it, because whole-half live share (~0.55–0.60)
+   ≫ its unrepresentatively-dead stoppage-window share (~0.26) — i.e. it rejects the "omitted minutes are
+   as dead as the few wasted played ones" assumption. Confirm and quantify.
+3. **Diagnostics to report:** pooled-mean `ls_half` vs stoppage-window `lsw` (1H and 2H); pooled-mean
+   `z_half` vs 0.382; corr(`ls_half`, `z_half`). NOTE the cancellation caveat: the locked headline is
+   robust partly because live share scales BOTH omitted-live AND λ-exposure (μ ≈ G·omitted/total, ADR-0026).
+   Method 2 changes the omitted-live live share but NOT the λ-exposure live share (still stoppage-window
+   live-minutes in `build_lambda_cells`), so it deliberately breaks that cancellation — flag how much of
+   any headline move comes from that vs from z_half.
+
+### Guardrails (CLAUDE.md §6 + ADR-0025 lock)
+- **This is ANALYSIS, not a lock or a build.** Do all of it in a standalone script (e.g.
+  `src/method2_samehalf.py`) that READS the production parquet and writes only a small report (md/print).
+  Do NOT overwrite `processed/counterfactual*.parquet`, the s08 grid, the figures, or `params.yaml`.
+  (Pattern to copy: `src/bip_headline_sensitivity.py` writes to a throwaway dir; ADR-0026.)
+- If Method 2 moves the central X% **materially** (outside [21.1%, 24.2%], or flips the
+  scoreline/outcome story), STOP and bring it to a human checkpoint before any lock change — the
+  headline is LOCKED (ADR-0025) and silent treatment is a calibrated POINT, not a band.
+- Write up the result as a new ADR (ADR-0028) and update this pointer.
+
+### Constants + paths (sanity-check; read live values from the code/parquet, don't hard-code)
+- Central knob_set `silent_marked|overall|pooled_all|hl=4.0|on`; windows `1H+2H` (headline) and `2H_only`.
+- `thr = params.yaml:phases.half_stoppage_s = 2700`; decay `h = 4.0`.
+- pooled λ sanity values: 1H stoppage `lam1 ≈ 0.0478`, observed 2H `obs2 ≈ 0.0816`, open-play floor
+  `floor2 ≈ 0.0427` /live-min; `z_genuine ≈ 0.382`; `residual_silent_s = 24.2`; addable split
+  `f1 ≈ 0.372 / f2 ≈ 0.628`.
+- true_stoppage (central): `ts_window_min = (lower_bound_s + silent_marked_s + 24.2*fshare[h]) / 60`,
+  `fshare = {1H:f1, 2H:f2}`; omitted clock = `max(0, ts - played_in_stoppage_min)`.
+- Files: `interim/{matches,match_state,incident_stoppage,bip_segments,played_in_stoppage}.parquet`,
+  `processed/{stoppage_live_share,productivity}.parquet`. Spain–England = `matches.stage=='Final'` in
+  the Euro 2024 (POST) tournament. Reproduce the locked central P first (must match
+  `processed/counterfactual.parquet`) BEFORE swapping in Method 2 — that proves the harness is faithful.
+
+---
+
+**[SUPERSEDED by ADR-0031 re-lock, 2026-06-25 — now 24.8% / flip 13.0%; see the top of this file. Block retained as the original-lock history.]**
 **HEADLINE LOCKED — 2026-06-19 (ADR-0025). THE MODELING PIPELINE IS DONE.** X% = **23.6%
 (95% CI 20.6%–27.4%)**, window **1H+2H**, central knob_set `silent_marked|overall|pooled_all|hl=4.0|on`.
 Framing: *if stoppage time were measured and awarded per the rulebook, ~24% of matches would have ended

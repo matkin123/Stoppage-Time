@@ -1,7 +1,10 @@
 """s05 -- Incident-stoppage lower bound + true-stoppage estimator.
 
 Per match & half, sums identifiable dead-time windows:
-  celebration     goal -> next kick-off
+  celebration     goal -> next kick-off. ADR-0030: era-conditional. PRE (pre-2022-directive:
+                  wc_2018, euro_2020) credits only the EXCESS over celebration_normal_s (the
+                  addable quantity, like the restart ladder); POST keeps the full gap (the 2022
+                  directive instructs refs to add the WHOLE celebration), so POST is unchanged.
   sub             Player Off / Substitution -> next restart
   card            Foul Committed w/ card or Bad Behaviour -> next restart
   injury          Injury Stoppage -> Referee Ball-Drop
@@ -28,7 +31,9 @@ The TRUE-STOPPAGE estimator adds a marker-gated silent term on top of the lower 
 >= silent.min_silent_gap_s non-restart gaps, credit ONLY those whose lead edge carries an
 out-of-play marker (src/lib/silent.py) -- the unmarked silent gaps are genuinely dead (s03 BIP
 keeps them) but a flat ~8.4 min/match non-addable baseline. A residual-silent constant frozen
-on 2018 (re-fit in IMPL-5 after adding restart_excess) closes the irreducible remainder. The
+on 2018 (re-fit in IMPL-5 after adding restart_excess; re-fit again in ADR-0030 for PRE after the
+celebration allowance dropped the PRE credit) closes the irreducible remainder. The residual is
+ERA-CONDITIONAL (ADR-0030): residual_silent_pre_s for PRE, residual_silent_s for POST. The
 estimator validates against Nate Silver's `expected` column (WC2018); s03/bip.py are NOT
 touched (they stay the validated duration rule -- BIP = TOTAL dead time, stoppage = ADDABLE).
 
@@ -101,6 +106,11 @@ def main() -> None:
     allowance = {str(k): float(v) for k, v in p["restart_normal_s"].items()}
     events = pd.read_parquet(config.INTERIM / "events_norm.parquet")
     seg = pd.read_parquet(config.INTERIM / "bip_segments.parquet")
+    # Era map (ADR-0030): PRE = pre-2022-directive (wc_2018, euro_2020); POST = the other four.
+    # PRE gets the goal-celebration ALLOWANCE (credit only the excess over celebration_normal_s);
+    # POST keeps the full goal->kickoff gap because the 2022 directive adds the whole celebration.
+    matches = pd.read_parquet(config.INTERIM / "matches.parquet")
+    match_group = matches.set_index("match_id")["group"].to_dict()
     seg["dur"] = seg["end_s"] - seg["start_s"]
     dead_total = seg[~seg["in_play"]].groupby("match_id")["dur"].sum()
     # dead segments per (match_id, period) in period_s coords for intersection.
@@ -110,6 +120,7 @@ def main() -> None:
 
     rows = []
     for mid, grp in events.groupby("match_id"):
+        is_pre = match_group.get(int(mid)) == "PRE"   # ADR-0030: PRE gets the celebration allowance
         for period, g in grp.groupby("period"):
             if period >= 5:
                 continue
@@ -126,11 +137,14 @@ def main() -> None:
             for i in range(len(clocks)):
                 t0 = float(clocks[i])
                 typ = types[i]
-                # celebration
+                # celebration -- PRE: excess over celebration_normal_s; POST: full gap (2022 directive).
                 if (typ == "Shot" and shot_out[i] == "Goal") or typ == "Own Goal For":
                     r = _next_resume(clocks, patterns, types, i, want_patterns={"From Kick Off"})
                     if r is not None:
-                        comp["celebration"].append((t0, min(r, t0 + p["max_celebration_s"])))
+                        hi = min(r, t0 + p["max_celebration_s"])
+                        lo = t0 + (p["celebration_normal_s"] if is_pre else 0.0)
+                        if hi > lo:
+                            comp["celebration"].append((lo, hi))
                 # substitution
                 if typ in ("Player Off", "Substitution"):
                     r = _next_resume(clocks, patterns, types, i, want_patterns=RESTART)
@@ -198,22 +212,27 @@ def main() -> None:
     # ---- true-stoppage estimator (per match) ----------------------------
     # lower_bound (incl. restart_excess, IMPL-5) + marker-gated silent + residual constant
     # (re-fit + frozen on 2018, ADR-0017).
-    residual_s = float(sil["residual_silent_s"])
+    # Era-conditional residual (ADR-0030): PRE celebration credit dropped (excess-only), so its
+    # residual rises to re-anchor the PRE-2018 mean to Nate; POST keeps the full-gap-fitted 24.2s.
+    pre_resid_s = float(sil["residual_silent_pre_s"])
+    post_resid_s = float(sil["residual_silent_s"])
     g_match = inc.groupby("match_id")[
         ["lower_bound_base_s", "lower_bound_s", "silent_marked_s"]
     ].sum()
     ts = g_match.reset_index()
-    ts["residual_silent_s"] = residual_s
-    ts["true_stoppage_s"] = ts["lower_bound_s"] + ts["silent_marked_s"] + residual_s
+    ts["group"] = ts["match_id"].map(match_group)
+    ts["residual_silent_s"] = ts["group"].map(lambda gr: pre_resid_s if gr == "PRE" else post_resid_s)
+    ts["true_stoppage_s"] = ts["lower_bound_s"] + ts["silent_marked_s"] + ts["residual_silent_s"]
     ts.to_parquet(config.INTERIM / "true_stoppage.parquet", index=False)
 
-    # ---- validation vs Nate `expected` (WC2018 only) --------------------
+    # ---- validation vs Nate `expected` (WC2018 only = all PRE) ----------
+    # WC2018 is entirely PRE, so the estimator validated here uses the PRE residual (ADR-0030).
     lb_base_min = {int(m): v / 60.0 for m, v in g_match["lower_bound_base_s"].items()}
     lb_min = {int(m): v / 60.0 for m, v in g_match["lower_bound_s"].items()}
     ms_min = {int(m): v / 60.0 for m, v in g_match["silent_marked_s"].items()}
     lbms = {m: lb_min[m] + ms_min[m] for m in lb_min}
-    est = {m: lbms[m] + residual_s / 60.0 for m in lb_min}
-    print("\n  IMPL-5 ablation vs Nate `expected` (32 WC2018 matches):")
+    est = {m: lbms[m] + pre_resid_s / 60.0 for m in lb_min}
+    print("\n  ADR-0030 ablation vs Nate `expected` (32 WC2018 matches; PRE celebration allowance):")
     nate.report(lb_base_min, "expected", "lower_bound (celeb/sub/card/injury)")
     nate.report(lb_min, "expected", "+ restart_excess")
     nate.report(lbms, "expected", "+ marker-gated silent")

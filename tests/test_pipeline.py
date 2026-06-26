@@ -65,11 +65,16 @@ def test_s05_silent_marked_within_all():
 
 
 def test_s05_true_stoppage_estimator():
-    """true_stoppage = lower_bound + marked silent + frozen residual, for every match."""
+    """true_stoppage = lower_bound + marked silent + frozen residual, for every match. The
+    residual is ERA-CONDITIONAL (ADR-0030): PRE matches use residual_silent_pre_s (celebration
+    credited as excess), POST keeps residual_silent_s (full-gap celebration)."""
     ts = _load(config.INTERIM / "true_stoppage.parquet")
-    r = float(P["silent"]["residual_silent_s"])
-    expected = ts["lower_bound_s"] + ts["silent_marked_s"] + r
-    assert (ts["residual_silent_s"] == r).all()
+    pre_r = float(P["silent"]["residual_silent_pre_s"])
+    post_r = float(P["silent"]["residual_silent_s"])
+    for gr, r in (("PRE", pre_r), ("POST", post_r)):
+        sub = ts[ts["group"] == gr]
+        assert (sub["residual_silent_s"] == r).all(), f"{gr} residual != {r}"
+    expected = ts["lower_bound_s"] + ts["silent_marked_s"] + ts["residual_silent_s"]
     assert (ts["true_stoppage_s"] - expected).abs().max() < 1e-6
 
 
@@ -141,11 +146,19 @@ def test_s08_avg_lambda_decay():
 
 
 def test_s08_decay_endpoints():
-    """IMPL-8 gate (ADR-0024): the half-life endpoints back out the OLD productivity rails. At
-    h=inf (no decay, gross-up off) the grid reproduces the old `observed` rail; at h=0 (instant
-    decay) the 2H window reproduces the old `open_play` floor. 1H+2H at h=0 is NOT the old
+    """IMPL-8 gate (ADR-0024/0029): the half-life endpoints back out the decay rails. At h=inf
+    (no decay, gross-up off) the grid uses the observed lambda with NO ramp toward floor; at h=0
+    (instant decay) the 2H window collapses to the open-play floor. 1H+2H at h=0 is NOT the
     open_play 1H+2H (the decay floors only the 2H window, by design). X% is monotone in the
-    half-life for the central spec (shorter half-life -> more decay -> lower X%)."""
+    half-life for the central spec (shorter half-life -> more decay -> lower X%).
+
+    NOTE (re-lock ADR-0031): these rails are the ADOPTED production rails -- Method 2 same-half
+    live factors (ls_half/z_half over the whole played half, ADR-0029) AND the PRE-only
+    goal-celebration allowance (ADR-0030, residual_silent_pre_s=94.1). The celebration allowance
+    credits only the excess over 60s for PRE matches, lowering PRE true_stoppage, so the 'all'
+    aggregate rails sit ~0.5 pp BELOW the Method-2-only rails (which were 0.246 / 0.179 / 0.101).
+    Refresh these only if same_half_factors, the celebration constants, or the frozen inputs
+    change."""
     s = _load(config.PROCESSED / "counterfactual_summary.parquet")
     allg = s[s["group"] == "all"]
 
@@ -155,10 +168,10 @@ def test_s08_decay_endpoints():
         assert not q.empty, f"missing hl={hl}|{gw} {win}"
         return float(q.iloc[0]["pct_changed"])
 
-    # endpoint regression: byte-close to the OLD locked rails (decisions.md / numbers_ledger).
-    assert abs(x("inf", "off", "1H+2H") - 0.238) < 0.004     # old `observed` rail
-    assert abs(x("inf", "off", "2H_only") - 0.171) < 0.004
-    assert abs(x("0.0", "off", "2H_only") - 0.097) < 0.004   # old `open_play` floor (2H exact)
+    # endpoint regression: adopted Method2+celebration rails (ADR-0031). Method-2-only in parens.
+    assert abs(x("inf", "off", "1H+2H") - 0.241) < 0.004     # observed rail (Method-2-only 0.246)
+    assert abs(x("inf", "off", "2H_only") - 0.175) < 0.004   # (Method-2-only 0.179)
+    assert abs(x("0.0", "off", "2H_only") - 0.099) < 0.004   # open_play floor, 2H exact (M2-only 0.101)
 
     # monotonicity in half-life for the central spec (gross-up on).
     xs = [x(h, "on", "1H+2H") for h in ("0.0", "2.0", "4.0", "8.0", "inf")]

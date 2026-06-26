@@ -1,0 +1,922 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\author{}
+\date{\vspace{-2.5em}}
+
+\begin{document}
+
+\subsection{Stoppage Time --- counterfactual model
+review}\label{stoppage-time-counterfactual-model-review}
+
+\textbf{What this is.} This is a counterfactual estimate over 314
+already-played matches: \emph{if the stoppage minutes that were truly
+owed but never played had actually been played, in how many of those
+matches would at least one additional goal have been score? Within this
+subset, how many results would have flipped (win/draw/loss)}
+
+This document is meant to be read start to finish with no outside
+material. Standard probability and bootstrap machinery is assumed; every
+football- or project-specific term is defined where it first appears.
+There are 7 sections. \textbf{Sections 2 and 4 are the parts I most want
+scrutinized} --- 2 is where the data's ambiguity is resolved by
+calibration, and 4 is where I explain the assumptions.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{1. The claim}\label{the-claim}
+
+\textbf{In plain English.} Hold each match exactly as it was actually
+played. Then \emph{append} the stoppage minutes the referee should have
+added but didn't, and ask whether at least one more goal would plausibly
+have landed in those appended minutes. Averaged over all 314 matches,
+that probability is \textbf{X\% = 23.6\%}:
+
+\emph{If stoppage time were measured and awarded in full, 23.6\% of the
+314 matches would have finished with a different scoreline} --- at least
+one extra goal somewhere in the omitted added time. This is a mean of
+per-match probabilities, computed in closed form.
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Quantity
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Value
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\textbf{Headline --- different scoreline (central)} & \textbf{23.6\%} \\
+95\% bootstrap confidence interval (sampling) & \textbf{{[}20.6\%,
+27.4\%{]}} \\
+Specification band --- one modeling choice varied at a time &
+\textbf{21.1\% -- 26.1\%} \\
+Full envelope --- all modeling choices varied jointly & \textbf{18.6\%
+-- 27.3\%} \\
+\textbf{Different \emph{result}} --- winner/draw actually changes &
+\textbf{12.1\% {[}10.6\%, 14.2\%{]}} \\
+Second-half-only variant (comparison, not the headline) & 16.0\%
+{[}14.0\%, 18.5\%{]} \\
+\end{longtable}
+
+\emph{All figures are for the full match (first- and second-half
+stoppage combined), pooled across all 314 matches. The two bands are
+different objects and are kept apart throughout: the bootstrap CI is
+\textbf{sampling} uncertainty; the specification band/envelope is how
+X\% moves as \textbf{modeling choices} change (§5).}
+
+\textbf{``Different scoreline'' vs ``different result'' --- keep these
+apart.} ``≥1 extra goal anywhere'' (a different \emph{scoreline},
+23.6\%) is strictly weaker than ``the winner or the draw actually
+changes'' (a different \emph{result}, 12.1\%). Of the 314 matches, 95
+were decided by two goals or more at the 90-minute mark; we treat those
+as unflippable, so they can change scoreline but not result. Conflating
+the two would overstate the claim, so the two numbers are always
+reported separately.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{2. The data, its gaps, and how we resolve
+them}\label{the-data-its-gaps-and-how-we-resolve-them}
+
+\emph{This is the section where I'm probably most curious for your
+input. The model's single largest judgment call lives here: the source
+data has irreducibly ambiguous gaps, and the way we resolve them is to
+calibrate against one external dataset (Nate Silver, World Cup 2018) and
+then extrapolate to five other tournaments. The question I am really
+asking is whether that calibrate-then-extrapolate move is sound.}
+
+\textbf{The matches.} 314 matches from six major international
+tournaments:
+
+\begin{longtable}[]{@{}lll@{}}
+\toprule\noalign{}
+Tournament & Era & Matches \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+FIFA World Cup 2018 & PRE & 64 \\
+UEFA Euro 2020 & PRE & 51 \\
+FIFA World Cup 2022 & POST & 64 \\
+UEFA Euro 2024 & POST & 51 \\
+Copa América 2024 & POST & 32 \\
+Africa Cup of Nations 2023 & POST & 52 \\
+\textbf{Total} & & \textbf{314} (PRE 115, POST 199) \\
+\end{longtable}
+
+A note on PRE vs POST: A 2022 IFAB directive (detail in §5) splits these
+into a ``before'' (PRE, 115) and ``after'' (POST, 199) cohort by
+\emph{how much added time officials were instructed to show}. Basically,
+the instructions for the refs changed, and as a result, they added more
+stoppage time. Interestingly, goals per live-minute remained
+statistically indistinguishable across the split (§5), so the model
+\textbf{pools all six tournaments} for its scoring rates. The PRE/POST
+split matters only as a robustness axis --- it is not the headline, and
+not what I need reviewed.
+
+\textbf{Where the numbers come from: StatsBomb event data.} Every figure
+traces to StatsBomb's open event data, which is \textbf{hand-coded}: an
+analyst watches the match video and logs every on-ball event --- pass,
+shot, tackle, throw-in, foul, card, substitution --- timestamped to the
+second. During active play that is an event every few seconds. When the
+ball is dead --- injury, goal celebration, substitution, VAR review ---
+nothing is logged, so a \textbf{gap} opens in the timestamp stream. We
+use only events, scores, and timestamps: no expected-goals (xG) model,
+no player-tracking (``360'') data.
+
+Because the data is event-driven, dead time is visible \emph{only} as
+one of these gaps --- and the gaps are not all equal:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Unambiguous gaps} carry an explicit out-of-play marker on the
+  last logged touch --- the ball is flagged \emph{out}, or a throw-in /
+  goal kick / corner / free kick follows. We know the clock should have
+  stopped, and roughly for how long.
+\item
+  \textbf{Data Gaps} are stretches of ≥ 20 seconds with no events
+  \emph{and no out-of-play marker}. From the data alone we cannot tell
+  whether the ball was genuinely dead (a stoppage we \emph{should}
+  count) or simply being moved slowly --- often off-camera --- in open
+  play (live time we should \emph{not} count).
+\end{itemize}
+
+\textbf{A real Data Gap --- the whole problem in one example.}
+Austria--France, Euro 2024, second half. These are two consecutive
+logged touches, with nothing recorded in between:
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Match clock
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Event type
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Play pattern
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Ball flagged out?
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Off-camera?
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+50:12 & Ball Recovery (France) & Regular Play & no & no \\
+50:38 & Pass (France) & Regular Play & no & yes \\
+\end{longtable}
+
+\emph{Label definitions, for a reader without the schema: \textbf{Ball
+Recovery / Pass} are StatsBomb on-ball event types; \textbf{Regular
+Play} means the touch happened in open play, not from a restart;
+\textbf{Ball flagged out} is StatsBomb's explicit marker that the ball
+had left the field of play; \textbf{Off-camera} flags a touch the
+analyst coded while the broadcast had cut away from the field.}
+
+Twenty-six seconds pass between these two touches. France has the ball
+at 50:12 in open play, the ball is \textbf{not} flagged out, and the
+next logged touch --- same possession, 26 seconds later --- is coded
+off-camera. Was the ball dead for those 26 seconds (an untracked knock
+or delay we \emph{should} credit as owed stoppage), or alive the whole
+time (France simply circulating the ball while the camera was
+elsewhere)? \textbf{Nothing in the data answers this.} Gaps like it
+total roughly \textbf{8.4 minutes per match} --- far too much to credit
+or discard wholesale.
+
+\textbf{How we resolve the Data Gaps.} The method is the following:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{Credit only marker-confirmed gaps.} A Data Gap is credited as
+  dead \emph{only} when its leading edge carries an out-of-play marker
+  --- i.e.~the data independently confirms the ball had already left
+  play. The \textasciitilde three-quarters of Data Gaps that are
+  \emph{unmarked} (like the example above) are \textbf{dropped}.
+  Crediting them all instead produces gross over-counts: the worst
+  single match, Germany--Sweden 2018, balloons to 19.7 owed minutes and
+  agreement with external ground truth collapses.
+\item
+  \textbf{Add back one small residual constant.} Dropping every unmarked
+  gap \emph{under}-counts. So we add a single flat per-match residual
+  (24.2 s, identical for every match), fit once so the estimator's
+  \emph{mean} lands on the external ground truth for 2018 (next
+  paragraph). It is a constant, not a per-gap guess.
+\end{enumerate}
+
+\textbf{Does it work? Calibration against Nate Silver's hand-measured
+2018 data.} Our one independent ground truth is Nate Silver's stopwatch
+measurement of all 32 World Cup 2018 matches (then at FiveThirtyEight),
+reporting per match the stoppage that \emph{should} have been added
+(``expected'') and the stoppage that \emph{was} played (``actual'').
+Building the owed-stoppage estimator one layer at a time and scoring
+each against his ``expected'' column:
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Owed-stoppage estimator
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Correlation r
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+MAE (min)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+mean (min)
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+identifiable dead time only (celebration / sub / card / injury) & 0.655
+& 5.72 & 7.53 \\
++ excess over a standard restart allowance & 0.754 & 4.28 & 9.03 \\
++ marker-confirmed Data Gaps & 0.825 & 2.49 & 12.76 \\
++ residual constant (final estimator) & \textbf{0.825} & \textbf{2.44} &
+12.60 \\
+\end{longtable}
+
+The final estimator tracks Nate's hand-measured ``expected'' at
+\textbf{r = 0.825} (MAE 2.44 min) and averages \textbf{12.60 min/match
+against his 13.16} --- within half a minute. The cross-check on the
+\emph{other} column is what makes this credible: our independently
+measured stoppage-\emph{played} clock matches his ``actual'' almost
+exactly (\textbf{r = 0.992, MAE 0.13 min}). So the owed-minus-played gap
+our pipeline produces reproduces the gap an outside observer found by
+hand --- Nate's own numbers show \textbf{13.16 owed vs 6.98 played, a
+6.2-minute (1.9×) shortfall} (Figure 1).
+
+\emph{Figure 1. Validation against Nate Silver's independent,
+hand-measured World Cup 2018 data, 32 matches. Left: our owed-stoppage
+estimator vs his ``expected'' (should-have-been-added) minutes --- r =
+0.825, MAE 2.44; the two labelled points are the model's hardest cases.
+Right: our stoppage-played clock vs his ``actual'' (actually-played)
+minutes --- r = 0.992, essentially exact. The dashed line is perfect
+agreement; the near-exact right panel is what makes the left panel's gap
+credible.}
+
+\textbf{Two things to weigh --- this is the crux.} \emph{(i) Treating
+the calibrated level as a point.} If the Data Gap credit is instead
+swept from ``credit none'' to ``credit all,'' the headline X\% moves
+from \textbf{10.8\% to 37.3\%} --- a wider swing than every other
+modeling choice combined. We argue that ``none'' and ``all'' are
+\emph{known-biased bounds}, not honest uncertainty, so we report the
+calibrated middle as a single number and propagate only its calibration
+error (the MAE) through the confidence interval (§5). That is a
+defensible position, but it is the one decision the headline's tightness
+rests on. \emph{(ii) Calibrate-then-extrapolate.} The entire calibration
+above is fit on \textbf{World Cup 2018 only} --- the lone tournament
+with independent ground truth --- and the fitted constants (restart
+allowances, residual, marker rule) are then applied \textbf{unchanged}
+to the other five tournaments, where estimated owed time runs
+\textasciitilde1.5--2× higher (POST owed ≈ 19.4 min vs 2018's 12.6).
+Whether a 2018-calibrated structure legitimately transfers to Copa
+América, AFCON, and the rest is, in my judgment, the model's most
+exposed assumption --- and the single thing I would most value your read
+on.
+
+\textbf{The perturbation, sized.} With the owed-stoppage estimator in
+hand, for each match we have the stoppage \emph{owed}
+(\texttt{T\_true}), the stoppage \emph{actually played}
+(\texttt{T\_play}, whistle-to-whistle added time, read off the event
+clock almost exactly), and their positive difference --- the
+\emph{omitted} minutes \texttt{O} we inject counterfactually:
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule\noalign{}
+Per match (minutes) & All 314 \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Stoppage owed, \texttt{T\_true} & 17.3 \\
+Stoppage actually played, \texttt{T\_play} & 8.9 \\
+\textbf{Omitted (owed − played), \texttt{O}} & \textbf{8.6} \\
+of which \emph{live} ball-in-play (after §4) & 5.1 \\
+\end{longtable}
+
+Omitted time is \textbf{positive in 97\% of matches} --- not a marginal
+perturbation. By tournament, estimated owed time is Copa América 25.3,
+AFCON 23.5, World Cup 2022 17.5, Euro 2020 16.3, Euro 2024 15.6, World
+Cup 2018 12.6 min --- the \textasciitilde2× spread over the 2018 anchor
+that drives the extrapolation worry above. One further thin spot to flag
+for later: the first-half stoppage goal rate, a model input, rests on
+just \textbf{23 goals} (§5).
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{3. Estimand \&
+identification}\label{estimand-identification}
+
+\textbf{The counterfactual, formally.} For match
+\texttt{i\ ∈\ \{1..314\}} and half-window \texttt{h\ ∈\ \{1H,\ 2H\}} (1H
+= first half, 2H = second half):
+
+\begin{verbatim}
+T_true(i,h)   estimated true stoppage owed, in minutes (the estimator of §4.2)
+T_play(i,h)   stoppage actually played = (period_end − 45:00 or 90:00), in minutes (measured)
+O(i,h)        = max(0, T_true − T_play)        omitted (owed-but-unplayed) minutes
+s(i,h)        = ball-in-play fraction of the window   ("live share"; measured, §4.1)
+ℓ(i,h)        = O(i,h) · φ(s)                  omitted LIVE minutes
+                  φ(s) = s                       (base model)
+                  φ(s) = s · (1 + z(1−s))        (with the gross-up of §4.3)
+
+λ_1H   = 0.0478   goals per live-minute, either team, in 1st-half stoppage   (n = 23 goals)
+λ̄_2H(i)         = the 2nd-half rate after decay (§4.1): ramps from 0.0816 toward 0.0427
+
+μ(i)   = λ_1H · ℓ(i,1H) + λ̄_2H(i) · ℓ(i,2H)   expected extra goals (either team)
+P_change(i) = 1 − exp(−μ(i))                   probability of ≥1 extra goal (Poisson)
+X%     = (1/314) · Σ_i P_change(i)
+\end{verbatim}
+
+The metric is \textbf{deterministic}; a random seed enters only the
+confidence-interval bootstrap (§5). λ is the \textbf{two-team} rate
+(goals by \emph{either} side per live-minute), so \texttt{μ\ =\ λ·ℓ} is
+directly the expected \emph{count} of extra goals. (An earlier version
+used a per-team rate and had to multiply by two to recover the match
+rate; using the two-team rate from the start removes that factor-of-2
+ambiguity.)
+
+\textbf{Outcome-flip} replaces \texttt{P\_change(i)} with \texttt{Q(i)},
+keyed on the score state at 90 minutes: level → \texttt{1\ −\ exp(−μ)}
+(any goal breaks the tie); one-goal lead → \texttt{1\ −\ exp(−μ/2)}
+(only the trailing team flips it, at half the two-team rate);
+two-goal-or-more lead → 0. State counts at 90′: level 98, one-goal lead
+121, two-or-more 95 --- so 219 of 314 are flip-eligible.
+
+\textbf{What is observed vs imputed.}
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Component
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Status
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+How obtained
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Goals, scoreline, score state at 45′/90′ & \textbf{Observed} & StatsBomb
+events \\
+\texttt{T\_play} stoppage actually played & \textbf{Observed}
+(near-exact) & whistle-to-whistle from the event clock; r = 0.992 vs
+Nate's ``actual'' (§6) \\
+Ball-in-play / live share \texttt{s} & \textbf{Observed}, calibrated &
+gap method (§4.1); pooled World Cup 2022 within 24s of Opta's published
+figure \\
+λ (stoppage \& open-play goal rates) & \textbf{Observed} & goals ÷
+live-minutes, directly counted \\
+\texttt{T\_true} stoppage owed & \textbf{Imputed} & the estimator of
+§4.2, calibrated to Nate's ``expected'' (r = 0.825) \\
+Extra goals in omitted minutes & \textbf{Imputed} & Poisson with λ̄
+applied to ℓ \\
+\end{longtable}
+
+\textbf{Why there is no train/test split, and what stands in for
+out-of-sample validity.} The estimand is a descriptive functional of a
+\emph{fixed, fully-observed} population --- all 314 matches, not a
+sample drawn from a super-population we forecast into. There is no
+held-out outcome to predict and no future to backtest, so
+cross-validation is undefined. Validity rests instead on (a) the
+\textbf{inputs being unbiased} and (b) the \textbf{transfer assumptions
+being defensible}. The only genuine out-of-sample anchoring is external,
+and it is on the \emph{inputs}, not the output:
+
+\begin{itemize}
+\tightlist
+\item
+  the \textbf{owed-stoppage estimator} is calibrated to Nate Silver's
+  hand-measured World Cup 2018 ``expected'' (should-be-added) column ---
+  r = 0.825, mean absolute error 2.44 min, n = 32 matches;
+\item
+  the \textbf{ball-in-play / live share} is calibrated to Opta's
+  published World Cup 2022 figure of 58:04 of ball-in-play per match (we
+  reconstruct 57:40, 24s lower than the benchmark);
+\item
+  the \textbf{stoppage-played clock} matches Nate's ``actual''
+  (actually-played) column almost exactly --- r = 0.992, MAE 0.13 min.
+\end{itemize}
+
+There is \textbf{no external check on X\% itself} --- see §6 and §7.
+
+\textbf{Identifying assumptions, and where each breaks.}
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+\#
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Assumption
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Breaks if\ldots{}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+A1 & \textbf{No re-simulation.} Appending omitted minutes does not
+change the minutes actually played; each extra goal is an independent
+increment toward ``≥1 extra goal.'' & \ldots game state matters --- a
+first-half or early extra goal would change subsequent play. Internally
+consistent for the \emph{scoreline} metric (we only need ≥1), but
+``ended differently'' is not a full re-play. \\
+A2 & \textbf{Productivity transfer.} Omitted minutes score at λ̄ --- the
+observed in-stoppage rate, decayed toward the open-play floor. &
+\ldots omitted minutes are systematically \emph{less} productive than
+even open play (they are, after all, the minutes a referee declined to
+play). The floor is the open-play rate, so even maximal decay never goes
+below match-average pace. \\
+A3 & \textbf{True-stoppage identification.} \texttt{T\_true} =
+identifiable dead time + marker-gated Data Gaps + a small residual,
+pinned by calibration to Nate's ``expected'' (§2). & \ldots POST behaves
+unlike World Cup 2018. Calibration exists for World Cup 2018 only; POST
+owed time (\textasciitilde19.4 min) is a \textasciitilde1.5×
+extrapolation of the 2018 anchor (12.6), with all constants frozen on
+2018. \\
+A4 & \textbf{Rate exchangeability.} Goals-per-live-minute is the same
+PRE/POST; omitted minutes draw the pooled in-stoppage rate. & \ldots the
+rule change altered scoring pace \emph{per live minute} (it changed the
+board, not the football). The PRE/POST sweep brackets this --- 22.6\% vs
+26.1\%, within Poisson noise. \\
+A5 & \textbf{Poisson within window.} Extra goals \textasciitilde{}
+Poisson(μ); \texttt{P(≥1)\ =\ 1\ −\ e\^{}(−μ)}. & \ldots goals
+over-disperse/cluster. But \texttt{P(≥1)} depends only on the
+pre-first-goal hazard, so mild clustering is second-order; the observed
+rate already embeds some second-goal inflation (8 of 73
+second-half-stoppage goals are a 2nd+ goal in the same window). \\
+A6 & \textbf{Live-share neutrality.} In the base model \texttt{s}
+cancels in μ (it scales λ up and ℓ down equally), so μ ≈
+goals-per-\emph{clock}-min × omitted-\emph{clock}-min. & \ldots only
+through the gross-up --- the one place \texttt{s} enters non-trivially.
+Off → geometric moves X\% by ≤3 pts (§4.3). \\
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{4. The load-bearing
+assumptions}\label{the-load-bearing-assumptions}
+
+This is the part worth the most scrutiny, alongside §2. Three
+assumptions carry the result below; a fourth --- how the ambiguous Data
+Gaps are resolved --- is in §2. Each is stated with its rationale and
+the conditions under which it breaks.
+
+\subsubsection{4.1 Productivity transfer and the late-game
+decay}\label{productivity-transfer-and-the-late-game-decay}
+
+\textbf{Takeaway.} Every omitted minute must be assigned a goal rate.
+Late-game minutes are observably more productive than average --- but we
+do \emph{not} assume the newly-added minutes inherit the full late-game
+premium. Their rate \textbf{decays} from the observed in-stoppage rate
+back toward the open-play rate as the hypothetical added window grows.
+The speed of that decay (its half-life) is the reported productivity
+band.
+
+First, the motivation. Goals do not arrive at a constant rate through a
+match: the per-live-minute scoring rate climbs through the regulation
+buckets, and the two stoppage windows are higher still (Figure 2).
+
+\emph{Figure 2. Goal productivity (goals per live-minute, either team)
+pooled across all six tournaments. Blue bars are regulation buckets; the
+two red bars are the rates inside first- and second-half stoppage ---
+the windows the model actually prices. Second-half stoppage (0.082) is
+the highest rate anywhere --- \textasciitilde1.9× the open-play average.
+This is why omitted stoppage minutes cannot be priced at the
+match-average rate; but they also cannot simply inherit the stoppage
+peak, which is measured over short, unusually urgent windows.}
+
+The three rates that anchor the model (pooled, either-team, per
+live-minute):
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Window
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+λ (goals/live-min)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+95\% Poisson CI
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+goals (n)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+live-min
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+2nd-half stoppage (decay \textbf{start}) & \textbf{0.0816} & {[}0.0640,
+0.1026{]} & 73 & 894.5 \\
+1st-half stoppage (used as-is, no decay) & 0.0478 & {[}0.0303, 0.0717{]}
+& 23 & 481.2 \\
+Regulation open play (decay \textbf{floor}) & \textbf{0.0427} &
+{[}0.0396, 0.0461{]} & 675 & 15794.1 \\
+\end{longtable}
+
+The 2nd-half stoppage rate is \textbf{1.91×} the open-play floor --- but
+it is measured over short, late, high-urgency windows, so we do not
+assume it for \emph{all} newly-added minutes. For each marginal omitted
+2nd-half minute \texttt{t}, the rate decays geometrically from the
+observed rate toward the floor:
+
+\begin{verbatim}
+λ(t)    = floor + (obs − floor) · 0.5^(t / h)
+λ̄(T,h)  = floor + (obs − floor) · (1 − e^(−kT)) / (kT),   k = ln 2 / h
+\end{verbatim}
+
+where \texttt{λ̄(T,h)} is the closed-form \textbf{average} over a window
+of \texttt{T} omitted 2nd-half minutes and \texttt{h} is the half-life.
+The two natural bounding cases fall out exactly: \texttt{h\ →\ ∞} is
+``no decay'' (every omitted minute at the observed rate) and
+\texttt{h\ →\ 0} is ``full decay'' (every omitted minute at the floor).
+The \textbf{first half keeps its observed rate} --- decay is applied to
+the second half only, where the urgency premium is concentrated. Figure
+3 shows the decay curves and the rate an average match actually
+receives.
+
+\emph{Figure 3. Left: the per-minute rate λ(t) for an omitted 2nd-half
+minute, decaying from the observed 2nd-half-stoppage rate (0.0816,
+dashed) toward the open-play floor (0.0427, dotted) for half-lives h =
+2, 4 (central), 8 minutes; the grey histogram is the distribution of
+omitted-minute counts across matches. Right: the window-average rate λ̄ a
+match actually receives as a function of its total omitted 2nd-half
+minutes T; the green line marks the mean omitted window (T ≈ 6.1 min).
+Because most matches have modest omitted windows, the effective rate
+sits well above the floor at the central half-life.}
+
+Reported decay band (\texttt{h\ ∈\ {[}2,\ 8{]}} min, central
+\texttt{h\ =\ 4}), with the two limits shown for reference:
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 10\tabcolsep) * \real{0.1667}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 10\tabcolsep) * \real{0.1667}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 10\tabcolsep) * \real{0.1667}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 10\tabcolsep) * \real{0.1667}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 10\tabcolsep) * \real{0.1667}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 10\tabcolsep) * \real{0.1667}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Full match
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+h=2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+\textbf{h=4 (central)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+h=8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+h→∞ (no decay)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+h→0 (full decay)
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+X\% & 22.2\% & \textbf{23.6\%} & 24.9\% & 23.8\% & 17.0\% \\
+\end{longtable}
+
+(\texttt{h\ →\ 0} gives 17.0\% on the full match --- not the 9.7\% of
+the second-half-only variant --- because the decay floors only the
+2nd-half window; the first-half contribution is untouched.)
+
+\textbf{Where it breaks.} If late-game urgency really does persist into
+the newly-added minutes, the model \emph{under}-counts and the truth is
+nearer 23.8--24.9\%. If the omitted minutes are \emph{deader} than open
+play --- plausible, since they are precisely the minutes a referee
+declined to play --- even the floor overstates them; but the live-share
+term \texttt{ℓ} already strips out dead time, and the gross-up (§4.3)
+pushes in the opposite direction. The decay half-life is the explicit
+knob that brackets this assumption.
+
+\subsubsection{4.2 The owed-stoppage estimator (formal
+definition)}\label{the-owed-stoppage-estimator-formal-definition}
+
+\textbf{Takeaway.} This is the formal construction of \texttt{T\_true},
+whose data-quality rationale and calibration to Nate already appear in
+§2. It is built bottom-up from dead time we can identify event-by-event,
+plus the marker-gated Data Gap allowance and residual constant of §2:
+
+\begin{verbatim}
+identifiable = (celebration ∪ substitution ∪ card ∪ injury ∪ excess-restart) ∩ dead-time
+T_true       = identifiable + marker-gated Data Gaps + a small residual constant
+\end{verbatim}
+
+\texttt{excess-restart} credits only the \emph{excess} of a routine
+restart's dead time over a standard allowance (throw-in 20s, goal kick
+30s, corner 45s, free kick 60s), so ordinary restarts are not
+double-paid. \texttt{marker-gated\ Data\ Gaps} credits a Data Gap (§2)
+of ≥20s \textbf{only when its leading edge carries an out-of-play
+marker}; the \textasciitilde8.4 min/match of \emph{unmarked} Data Gaps
+are dropped and a flat residual constant restores the mean. The
+term-by-term build and its calibration to Nate's ``expected'' column (r
+= 0.825, MAE 2.44 min) are in §2.
+
+\textbf{Where it breaks.} Only about a quarter of Data Gaps carry the
+out-of-play marker, and the source never records ``addability''
+directly, so r ≈ 0.82 is effectively the ceiling achievable from free
+data. More structurally, the restart allowances and the residual
+constant are frozen on \textbf{World Cup 2018} and applied unchanged
+where owed time is \textasciitilde1.5--2× as large --- the model's most
+exposed assumption (§2, §7).
+
+\subsubsection{4.3 The gross-up: stoppage within
+stoppage}\label{the-gross-up-stoppage-within-stoppage}
+
+\textbf{Takeaway.} If you add stoppage minutes, some of \emph{those}
+minutes will themselves be eaten by new stoppages, which the directive's
+own logic says should also be compensated. The gross-up adds that
+second-order time --- but only the genuinely-dead-and-addable fraction
+\texttt{z} of added time recurs, not the whole non-live share, so the
+effect is small and is \textbf{not} double-counting.
+
+\texttt{z} is measured directly: of 44.2 dead minutes per match in
+regulation, the estimator counts 16.9 as genuine addable stoppage, so
+\texttt{z\ =\ 16.9\ /\ 44.2\ =\ 0.382}. The one-pass live factor is
+\texttt{φ(s)\ =\ s·(1\ +\ z(1−s))}; iterating stoppage-within-stoppage
+to a fixed point gives the geometric \texttt{s\ /\ (1\ −\ z(1−s))}.
+Because the recurring ratio is \texttt{z(1−s)\ ≈\ 0.18} --- not the
+naive non-live share \texttt{1−s\ ≈\ 0.46} --- the geometric tail
+collapses to just above the single pass:
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+Full match & gross-up OFF & \textbf{ON (central)} & geometric ceiling \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+X\% & 21.1\% & \textbf{23.6\%} & 24.2\% \\
+\end{longtable}
+
+\textbf{Where it breaks.} If you reject second-order compensation
+entirely, X\% falls only to \textbf{21.1\%} (still about 1 in 5). If you
+believed \emph{all} dead time recurs (\texttt{z\ =\ 1}), the ceiling
+would be \texttt{1/s\ ≈\ 34\%} --- the \texttt{z}-weighting is exactly
+what kills that tail. Either way, the whole gross-up question moves the
+headline by ≤ 3 points.
+
+(The model's fourth load-bearing judgment --- how the ambiguous Data
+Gaps are resolved, and the calibration that pins them to Nate --- is in
+§2, the section flagged for review. Its propagated uncertainty, the
+estimator's calibration error, enters the bootstrap as a per-match term
+σ = MAE·√(π/2) ≈ 3.06 min under a half-normal; see §5.)
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{5. Uncertainty --- sampling vs
+specification}\label{uncertainty-sampling-vs-specification}
+
+\textbf{Takeaway.} Two distinct kinds of uncertainty are kept separate.
+\textbf{(a) Sampling}: a bootstrap CI reflecting finite goal counts and
+estimator error. \textbf{(b) Specification}: how X\% moves as modeling
+choices change. Once the Data Gap handling is fixed (§2), the
+specification spread is comparable to the sampling spread --- neither
+dominates.
+
+\textbf{(a) Sampling CI = {[}20.6\%, 27.4\%{]}} (width 6.7 pts). In each
+of B = 1000 bootstrap draws (seed fixed): every distinct λ-cell is
+redrawn from its Jeffreys--Gamma posterior
+\texttt{Gamma(count\ +\ 0.5,\ 1/exposure)} --- the 2nd-half decay
+redraws \emph{both} the 73-goal observed cell and the 675-goal floor
+cell and recombines them through λ̄ --- plus one shared owed-stoppage
+estimator-error draw \texttt{N(0,\ 3.06\ min)}, split across the two
+halves by their share of addable time and re-shifting the decay horizon.
+This is genuine sampling uncertainty in the inputs.
+
+\textbf{(b) Specification sensitivities} (each choice swept with the
+others held at central, full match):
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Modeling choice
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Levels → X\%
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Spread
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\textbf{λ source} & all-pooled \textbf{23.6} · POST-only 22.6 ·
+regime-matched 23.8 · PRE-only 26.1 & \textasciitilde3.5 pts \\
+\textbf{Gross-up} & off 21.1 → \textbf{on 23.6} → geometric 24.2 &
+\textasciitilde3.1 pts \\
+\textbf{Decay half-life} & h=2 22.2 · \textbf{h=4 23.6} · h=8 24.9 &
+\textasciitilde2.7 pts \\
+\textbf{Conditioning} & overall \textbf{23.6} · split by tied/not-tied
+23.4 & \textasciitilde0.2 pts (negligible) \\
+One-at-a-time band (min--max of the above) & \textbf{21.1\% -- 26.1\%} &
+5.0 pts ≈ 0.7× sampling \\
+Full \textbf{joint} envelope (all choices together) & \textbf{18.6\% --
+27.3\%} & 8.7 pts ≈ 1.3× sampling \\
+\emph{Data Gap handling, if (improperly) swept as a knob} & \emph{10.8\%
+-- 37.3\%} & \emph{\textasciitilde26 pts --- see §2} \\
+\end{longtable}
+
+The \textbf{λ source} row is where the PRE/POST split (§2) earns its
+keep. The 2022 directive raised stoppage \emph{played} sharply --- 6.8 →
+10.0 min/match, PRE → POST --- yet goals \emph{per live-minute} barely
+moved: pricing omitted minutes at PRE-only, POST-only, or pooled rates
+spans just 22.6--26.1\%, all within Poisson noise. Stoppage time
+changed; productivity did not. That is precisely why the model pools all
+six tournaments for λ (``all-pooled'' above), and why the top-end 26.1\%
+comes entirely from the thin, wide-CI PRE-only cohort rather than any
+real PRE/POST productivity gap. (``regime-matched'' prices PRE omitted
+minutes at the PRE rate and POST minutes at the POST rate, rather than
+pooling.)
+
+\textbf{Which choices move X\% most.} The \textbf{λ source} (driven
+entirely by the thin, wide-CI PRE-only cohort at the top end) and the
+\textbf{gross-up} are the widest legitimate axes, \textasciitilde3
+points each; the \textbf{decay half-life} is \textasciitilde2.7;
+conditioning is noise. Both extremes of the reported envelope are
+identifiable: the floor (18.6--21.1\%) is the gross-up-off / most-decay
+corner; the ceiling (26.1--27.3\%) is the PRE-only λ × least-decay
+corner --- i.e.~the least-certain input cohort. (The envelope sweeps the
+half-life over its plausible 2--8 min range; the two mathematical limits
+--- no decay, full decay --- are shown in §4.1 only to recover the
+bounding rails and are not part of the band.)
+
+\textbf{A structural soft spot.} The first-half window contributes
+\textbf{+7.6 points} (second-half-only 16.0\% → full-match 23.6\%) ---
+roughly a third of the headline --- and rests on the \textbf{23-goal}
+first-half-stoppage rate. The bootstrap propagates that thinness (a wide
+first-half CI), but the \emph{point} estimate's dependence on a 23-goal
+cell is worth naming.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{6. External validation}\label{external-validation}
+
+\textbf{Takeaway.} Two external anchors certify the model's
+\textbf{inputs}; neither certifies its \textbf{output}.
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Nate Silver, World Cup 2018 (Figure 1, §2).} Detailed in §2:
+  our owed-stoppage estimator tracks his hand-measured ``expected'' at
+  \textbf{r = 0.825} (MAE 2.44 min) and our stoppage-played clock tracks
+  his ``actual'' at \textbf{r = 0.992}. The point worth repeating here
+  is that the owed-vs-played \emph{gap} is not a modeling artifact ---
+  Nate, with a stopwatch and no access to our pipeline, independently
+  found \textbf{13.16 owed vs 6.98 played}, i.e.~roughly half the owed
+  stoppage going unplayed.
+\item
+  \textbf{Opta, World Cup 2022 ball-in-play.} Opta publishes an official
+  average ball-in-play time of 58:04 per match for World Cup 2022; our
+  gap-method reconstruction gives 57:40 (24s low). This certifies the
+  live-share denominator \texttt{s}.
+\end{itemize}
+
+\textbf{What they do \emph{not} certify.} Both anchors are World Cup
+2018/2022 respectively; the POST owed-time magnitude
+(\textasciitilde19.4 min) is an extrapolation.
+
+\subsection{7. Limitations \& open
+questions}\label{limitations-open-questions}
+
+Honest list, least-defensible first:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{No independent counterfactual benchmark.} Every external check
+  is on an input; X\% itself is unfalsified against any outside number.
+\item
+  \textbf{POST coverage gap.} The estimator is calibrated on World Cup
+  2018 only. The POST cohort --- where the headline mostly lives, and
+  where owed time is \textasciitilde1.5--2× World Cup 2018 --- rides on
+  frozen-2018 constants and a single World Cup 2022 ball-in-play point.
+  If the 2018 marker/allowance/residual structure does not transfer to
+  Copa América and AFCON, the POST \texttt{T\_true} (and thus X\%) is
+  the most exposed quantity.
+\item
+  \textbf{Data-Gap-as-point (§2).} Defensible, but it is the choice that
+  makes the band tight; a reviewer who insists ``none''/``all'' are
+  legitimate uncertainty will see a far wider honest range.
+\item
+  \textbf{First-half thinness (§5).} About a third of the headline rests
+  on 23 goals, with no game-state propagation across the first-half
+  increment (A1).
+\item
+  \textbf{Productivity transfer is an assumption, not a measurement
+  (§4.1).} The decay band brackets the urgency premium but cannot rule
+  out that \emph{omitted} minutes --- the ones a referee chose not to
+  play --- are systematically unlike any observed minute.
+\item
+  \textbf{Cooling/water breaks} were investigated as an additional
+  stoppage source and set aside: roughly three-quarters of that time is
+  already captured by the estimator, and crediting the rest added no
+  robust accuracy on the only externally-validated set.
+\end{enumerate}
+
+\end{document}

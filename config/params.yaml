@@ -58,13 +58,21 @@ silent:
   # over the 32 WC2018 matches = 13.160 - 12.757 min). RE-FIT in IMPL-5 (ADR-0017): adding
   # restart_excess to lower_bound raised the mean, shrinking the residual 114.0 -> 24.2s.
   # FROZEN; applied per-match to all six tournaments (POST has no ground truth to fit on).
-  residual_silent_s: 24.2
+  # ADR-0030: this is now the POST / full-gap value (directive era keeps the full goal-celebration
+  # credit, so its residual is unchanged). PRE uses residual_silent_pre_s below.
+  residual_silent_s: 24.2        # POST (directive era, full-gap celebration) -- unchanged
+  # PRE (pre-2022) residual (ADR-0030). The PRE celebration credit dropped to the EXCESS over
+  # celebration_normal_s (60s), so the PRE-2018 mean fell and the residual rises to re-anchor it to
+  # Nate `expected` (13.160 min). RE-FIT on the 32 WC2018 matches: mean(Nate expected) -
+  # mean(lower_bound + silent_marked) = 94.09s. FROZEN; applied to all PRE matches (WC2018 + Euro2020).
+  residual_silent_pre_s: 94.1    # PRE (pre-directive), celebration credited as excess; re-fit on WC2018
   # Estimator validation residuals on the 32 WC2018 matches (full-match totals vs Nate
-  # `expected`), re-fit in IMPL-5 (ADR-0017) after adding restart_excess (r 0.768->0.825,
-  # MAE 2.75->2.44). IMPL-4 uses estimator_mae_min as the per-match sigma when propagating
-  # estimator uncertainty into the X% confidence band.
-  estimator_pearson_r: 0.825
-  estimator_mae_min: 2.44
+  # `expected`). Re-fit in IMPL-5 (ADR-0017) after adding restart_excess (r 0.768->0.825, MAE
+  # 2.75->2.44), then in ADR-0030 after the PRE celebration allowance (r 0.825->0.875, MAE
+  # 2.44->1.77; WC2018 is all PRE so this is the PRE estimator). IMPL-4 uses estimator_mae_min as
+  # the per-match sigma when propagating estimator uncertainty into the X% confidence band.
+  estimator_pearson_r: 0.875
+  estimator_mae_min: 1.77
 
 phases:
   # Stoppage threshold in WITHIN-PERIOD seconds: period_s >= 2700 means past 45:00 in a
@@ -79,6 +87,12 @@ incident:
   max_sub_s: 90
   max_card_s: 120
   max_injury_s: 600
+  # Goal-celebration allowance (ADR-0030): PRE-DIRECTIVE tournaments ONLY. A normal pre-2022 post-goal
+  # kickoff was not fully added to stoppage; credit only the EXCESS over this allowance,
+  # [goal + allowance, next kickoff], matching the restart_normal_s ladder (the ADDABLE quantity, not the
+  # full BIP gap). POST tournaments keep the full gap (2022 directive adds the whole celebration).
+  # FIT/FROZEN on WC2018; central 60s (== free-kick allowance; r-curve plateaus 60-90s).
+  celebration_normal_s: 60.0
   # Restart time-wasting allowances (IMPL-5, ADR-0017): Nate Silver's "how long a routine
   # restart SHOULD take". For each routine restart-boundary gap we credit only the EXCESS
   # over the allowance -- interval [last_event + allowance, restart] -- as addable stoppage.

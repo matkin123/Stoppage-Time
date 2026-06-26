@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from src.lib import config, stats
+from src.lib import config, editorial, stats
 
 OUT = config.FIGURES / "requested"
 
@@ -285,6 +285,165 @@ def _save(fig, name):
     print(f"  wrote {path}")
 
 
+# ================================================================ publication figures
+# Two charts (agg_01 scatter, agg_02 bar) are redesigned to the editorial style guide
+# (docs/editorial_graphics_style_guide.md). These use dedicated render functions so the
+# per-tournament small-multiples (which share _scatter_estimate/_bar_buckets) are untouched.
+# Shared styling (palette, title block, footer) lives in src/lib/editorial.py.
+
+PUB_RC = editorial.RC
+HILITE = editorial.HILITE
+NEUTRAL = editorial.NEUTRAL
+NEUTRAL_PT = editorial.NEUTRAL_PT
+INK = editorial.INK
+SUBINK = editorial.SUBINK
+FOOTER = editorial.FOOTER
+_titleblock = editorial.titleblock
+
+
+# ------- agg_02: goals per live minute, by stage of the match -------
+BUCKET_PUB = {
+    "1-10": "0–10", "11-20": "10–20", "21-30": "20–30", "31-40": "30–40",
+    "41-45": "40–45", "1H stop": "45'+",
+    "45-50": "45–50", "51-60": "50–60", "61-70": "60–70", "71-80": "70–80",
+    "81-90": "80–90", "2H stop": "90'+",
+}
+
+
+def _bar_buckets_pub(prod):
+    prod = prod.set_index("bucket").reindex(BUCKET_ORDER).reset_index()
+    reg = prod[~prod["bucket"].isin(STOPPAGE_LABELS)]
+    baseline = reg["goals"].sum() / reg["live_min"].sum()
+    rates = prod["rate"].to_numpy()
+    is_stop = prod["bucket"].isin(STOPPAGE_LABELS).to_numpy()
+
+    with plt.rc_context(PUB_RC):
+        fig = plt.figure(figsize=(10.2, 6.4))
+        ax = fig.add_axes([0.085, 0.205, 0.885, 0.545])
+        x = np.arange(len(prod))
+        colors = [HILITE if s else NEUTRAL for s in is_stop]
+        ax.bar(x, rates, color=colors, width=0.78, zorder=3)
+
+        # regular-play average reference line (label parked over the short early bars)
+        ax.axhline(baseline, color="#6B7178", lw=1.0, ls=(0, (4, 3)), zorder=2)
+        ax.text(-0.35, baseline + 0.0016, "Regular-play average",
+                ha="left", va="bottom", fontsize=8.5, color="#6B7178", style="italic")
+
+        # value labels on the two highlighted (added-time) bars
+        for xi, r, s in zip(x, rates, is_stop):
+            if s:
+                ax.text(xi, r + 0.0016, f"{r:.3f}", ha="center", va="bottom",
+                        fontsize=9, fontweight="bold", color=HILITE)
+
+        # hero insight annotation -> tip lands just left of the "0.082" data label,
+        # vertically centred on it and above the red bar
+        ax.annotate(
+            "Goals come nearly twice as fast\nin second-half added time",
+            xy=(10.5, rates[-1] + 0.0033), xytext=(7.3, rates[-1] * 0.93),
+            ha="center", va="top", fontsize=10, color=INK, fontweight="bold",
+            arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.2,
+                            connectionstyle="arc3,rad=-0.2"))
+
+        ax.set_xticks(x)
+        ax.set_xticklabels([BUCKET_PUB[b] for b in prod["bucket"]], fontsize=8.6)
+        ax.set_ylim(0, max(rates) * 1.16)
+        ax.set_ylabel("Goals per live minute", fontsize=11)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.02f}"))
+        ax.margins(x=0.01)
+        ax.grid(axis="y", color="#E6E8EA", lw=0.8, zorder=0)
+        ax.set_axisbelow(True)
+        for sp in ("top", "right", "left"):
+            ax.spines[sp].set_visible(False)
+        ax.tick_params(length=0)
+
+        # half-group structure beneath the axis
+        ax.axvline(5.5, color="#D7DADE", lw=1.0, ymin=-0.16, ymax=1.0,
+                   clip_on=False, zorder=1)
+        for xc, lab in ((2.5, "F I R S T   H A L F"), (8.5, "S E C O N D   H A L F")):
+            ax.text(xc, -0.16, lab, transform=ax.get_xaxis_transform(),
+                    ha="center", va="top", fontsize=9, color="#6B7178",
+                    fontweight="bold")
+
+        _titleblock(
+            fig,
+            "Goals arrive fastest in stoppage time",
+            "Goals per live minute by stage of the match. Scoring climbs through each half "
+            "and spikes in added time (red). A “live minute” counts only time the ball is "
+            "actually in play.",
+            FOOTER, subtitle_width_in=6.2)
+    _save(fig, "agg_02_productivity_by_bucket.png")
+
+
+# ------- agg_01: true stoppage-time estimate vs stoppage time actually played -------
+def _scatter_estimate_pub(sc):
+    played = sc["played_min"].to_numpy()
+    est = sc["est_min"].to_numpy()
+    n = len(sc)
+    above = est > played
+    pct_above = above.mean()
+    lim = max(played.max(), est.max()) + 1.5
+    med_played, med_est = float(np.median(played)), float(np.median(est))
+
+    with plt.rc_context(PUB_RC):
+        # Wide canvas for side whitespace: the plot is a square and height-limited,
+        # so the extra width does NOT change its physical size — it just becomes
+        # margin, and the symmetric box + anchor "N" keep the plot centred.
+        fig = plt.figure(figsize=(11.4, 9.1))
+        ax = fig.add_axes([0.10, 0.15, 0.80, 0.64])
+        ax.set_anchor("N")
+
+        # identity (fairness) line
+        ax.plot([0, lim], [0, lim], color="#3C4043", lw=1.3, zorder=2)
+        # points: red above the line (cut short), grey below (played extra)
+        ax.scatter(played[above], est[above], s=20, color=HILITE, alpha=0.55,
+                   linewidths=0, zorder=3)
+        ax.scatter(played[~above], est[~above], s=20, color=NEUTRAL_PT, alpha=0.7,
+                   linewidths=0, zorder=3)
+
+        # "typical match" marker -> the ~2x story, made concrete
+        ax.scatter([med_played], [med_est], s=95, color=INK, marker="D",
+                   zorder=5, edgecolors="white", linewidths=1.1)
+        ax.annotate(
+            f"Typical match\n~{med_played:.0f} min played,\n~{med_est:.0f} min owed",
+            xy=(med_played, med_est), xytext=(med_played + 12.5, med_est - 5.5),
+            fontsize=9.5, color=INK, ha="left", va="top",
+            arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.1,
+                            connectionstyle="arc3,rad=0.2"))
+
+        # inline label for the diagonal (replaces the legend)
+        ax.text(lim * 0.74, lim * 0.74, "Played = estimate", rotation=45,
+                rotation_mode="anchor", ha="center", va="bottom", fontsize=9.5,
+                color="#3C4043", style="italic")
+        ax.text(lim * 0.755, lim * 0.74, "clock stopped on time", rotation=45,
+                rotation_mode="anchor", ha="center", va="top", fontsize=8,
+                color="#8A8F96", style="italic")
+
+        # region cue: what being above the line means (parked in the clear upper-
+        # right white space so it doesn't sit on top of the dot cloud)
+        ax.text(0.47, 0.965, "Above the line:\nmatch ended too early",
+                transform=ax.transAxes, ha="left", va="top", fontsize=9.5,
+                color=HILITE, fontweight="bold")
+
+        ax.set_xlim(0, lim)
+        ax.set_ylim(0, lim)
+        ax.set_aspect("equal")
+        ax.set_xlabel("Stoppage time actually played (minutes)", fontsize=11, labelpad=6)
+        ax.set_ylabel("True stoppage-time estimate (minutes)", fontsize=11, labelpad=6)
+        ax.grid(color="#ECEEEF", lw=0.7, zorder=0)
+        ax.set_axisbelow(True)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        ax.tick_params(length=0, labelsize=9.5)
+
+        _titleblock(
+            fig,
+            "Matches play about half the stoppage time they’re owed",
+            [f"Each red dot is one of {n} matches. {pct_above:.0%} of matches ended too early,",
+             "with more stoppage owed than was actually played."],
+            FOOTER, left_in=1.7)
+    _save(fig, "agg_01_scatter_estimate_vs_played.png")
+
+
 def small_multiples(d, plot_fn, metric_fn, fname, suptitle):
     fig, axes = plt.subplots(2, 3, figsize=(15, 9))
     for ax, (key, label) in zip(axes.ravel(), TOURNEYS):
@@ -321,28 +480,58 @@ def game_state_table(d):
     return pd.DataFrame(rows)
 
 
+STATE_PLAIN = {"Tied": "Level", "1-goal diff": "Within one goal",
+               ">1-goal diff": "Two or more goals apart"}
+
+
 def render_table_png(tab):
-    fig, ax = plt.subplots(figsize=(13, 2.4))
-    ax.axis("off")
-    disp = tab.copy()
-    disp["rate [95% CI]"] = [
-        f"{r:.4f} [{lo:.4f}, {hi:.4f}]" if np.isfinite(r) else "n/a"
-        for r, lo, hi in zip(tab["goals_per_played_min"], tab["ci_lo"], tab["ci_hi"])]
-    disp = disp[["state_at_90", "n_matches", "goals_2H_stoppage",
-                 "live_min_2H_stoppage", "rate [95% CI]"]]
-    disp.columns = ["state @ 90'", "n matches", "2H-stop goals",
-                    "2H-stop played min", "goals/played min [95% CI]"]
-    t = ax.table(cellText=disp.values, colLabels=disp.columns,
-                 cellLoc="center", loc="center",
-                 colWidths=[0.15, 0.12, 0.15, 0.18, 0.30])
-    t.auto_set_font_size(False)
-    t.set_fontsize(9)
-    t.scale(1, 1.6)
-    for j in range(len(disp.columns)):
-        t[0, j].set_facecolor("#4C72B0")
-        t[0, j].set_text_props(color="white", fontweight="bold")
-    ax.set_title("2H-stoppage goal productivity by game state at 90' (all tournaments)",
-                 fontsize=11, pad=12)
+    cols = ["Score at 90 min", "Matches", "Stoppage goals", "Live minutes",
+            "Goals per live minute (95% CI)"]
+    aligns = ["left", "center", "center", "center", "left"]
+    cell_text = []
+    for _, r in tab.iterrows():
+        rate = r["goals_per_played_min"]
+        ci = (f"{rate:.3f}   [{r['ci_lo']:.3f}, {r['ci_hi']:.3f}]"
+              if np.isfinite(rate) else "n/a")
+        cell_text.append([STATE_PLAIN.get(r["state_at_90"], r["state_at_90"]),
+                          f"{int(r['n_matches'])}", f"{int(r['goals_2H_stoppage'])}",
+                          f"{r['live_min_2H_stoppage']:.0f}", ci])
+
+    with plt.rc_context(PUB_RC):
+        fig = plt.figure(figsize=(12.0, 4.3))
+        # table occupies a fixed band; bbox=[0,0,1,1] makes it fill the axes exactly
+        # (equal row heights, no overflow into the title or footer).
+        ax = fig.add_axes([0.035, 0.20, 0.93, 0.40])
+        ax.axis("off")
+        widths = [0.25, 0.11, 0.17, 0.16, 0.31]
+        t = ax.table(cellText=cell_text, colLabels=cols, colWidths=widths,
+                     bbox=[0, 0, 1, 1])
+        t.auto_set_font_size(False)
+        t.set_fontsize(11)
+        ncol = len(cols)
+        for (row, col), cell in t.get_celld().items():
+            cell.set_edgecolor("none")
+            cell.PAD = 0.04
+            ha = aligns[col]
+            if row == 0:  # header: bottom rule only, bold ink, metric col in red
+                cell.visible_edges = "B"
+                cell.set_edgecolor(INK)
+                cell.set_linewidth(1.2)
+                cell.set_text_props(fontweight="bold", ha=ha,
+                                    color=HILITE if col == ncol - 1 else INK)
+            else:  # faint row separators; the metric column carries weight
+                cell.visible_edges = "B"
+                cell.set_edgecolor(editorial.GRID)
+                cell.set_linewidth(0.8)
+                cell.set_text_props(ha=ha, color=INK,
+                                    fontweight="bold" if col == ncol - 1 else "normal")
+
+        editorial.titleblock(
+            fig,
+            "Whatever the score, stoppage time scores the same",
+            ["Second-half stoppage-time scoring by the score when the 90th minute is",
+             "reached. The rate hardly shifts between level and decided matches."],
+            FOOTER, left_in=0.42)
     _save(fig, "t01_gamestate_productivity.png")
 
 
@@ -356,13 +545,9 @@ def main():
     _scatter(ax, d["scatter"], "All tournaments")
     _save(fig, "agg_01_scatter_lb_vs_played.png")
 
-    fig, ax = plt.subplots(figsize=(7, 7))
-    _scatter_estimate(ax, d["scatter_est"], "All tournaments")
-    _save(fig, "agg_01_scatter_estimate_vs_played.png")
+    _scatter_estimate_pub(d["scatter_est"])
 
-    fig, ax = plt.subplots(figsize=(10, 5.5))
-    _bar_buckets(ax, productivity_by_bucket(d, scope_ids(d, "all")), "All tournaments")
-    _save(fig, "agg_02_productivity_by_bucket.png")
+    _bar_buckets_pub(productivity_by_bucket(d, scope_ids(d, "all")))
 
     fig, ax = plt.subplots(figsize=(5.5, 5.5))
     _shares(ax, two_h_shares(d, scope_ids(d, "all")), "All tournaments")

@@ -7,7 +7,16 @@ Closed form, per match, per added-time window h in {1H, 2H}:
     true_stoppage_h      = s05 estimator minutes (silent-knob dependent)      [FROZEN r=0.825]
     played_in_stoppage_h = minutes actually played past 45:00/90:00 (period_end-2700) [DC2 rename]
     omitted_h            = max(0, true_stoppage_h - played_in_stoppage_h)
-    omitted_live_h       = omitted_h * live_share_h        (ball-in-play share, s07; DC1 table)
+    omitted_live_h       = omitted_h * ls_half_h * (1 + z_half_h*(1-ls_half_h))   [gross-up ON]
+                           SAME-HALF conversion (Method 2, ADR-0029): the omitted minutes are assumed
+                           to look like the average minute of that WHOLE played half (its regulation
+                           play + its played added time), so BOTH the live share ls_half_h AND the
+                           gross-up z_half_h are per-(match,half), measured over all period-h segments
+                           (bip_segments + incident_stoppage), NOT the stoppage-window live share /
+                           pooled scalar z=0.382 (the asymmetry ADR-0027/0028 flagged). The
+                           lambda-EXPOSURE live-minutes are UNCHANGED (still the stoppage-window
+                           table), so this deliberately BREAKS the live-share cancellation (ADR-0026).
+                           gross-up OFF uses omitted_live_h = omitted_h * ls_half_h.
     lambda_h             = two-team goals / match-live-minute in window h (pooled, overall). The
                            2H rate DECAYS with the omitted-window length (IMPL-8 / Method A,
                            ADR-0024): avg_lambda(T,h) ramps from the observed 2H-stoppage rate down
@@ -68,14 +77,15 @@ def avg_lambda(T_min, halflife_min, obs_rate, floor_rate):
     return floor + (obs - floor) * ramp
 
 
-def _geom_ceiling(window, ci, z, halflife=4.0):
+def _geom_ceiling(window, ci, halflife=4.0):
     """Geometric (full stoppage-within-stoppage) gross-up ceiling X% for the central spec. Only the
-    genuine-stoppage fraction z of dead time recurs (ADR-0024 z-correction), so the geometric-limit
-    live factor is ls/(1 - z*(1-ls)) -- the fixed point of compensating ONLY for the stoppage (not
-    normal flow) within the added time. With z<1 this sits just above single-pass `on`, NOT at the
-    old 1/live_share. Reported as the upper rail above `on`, not a swept knob."""
-    fl1 = np.where(ci["ls1"] > 0, ci["ls1"] / (1.0 - z * (1.0 - ci["ls1"])), 0.0)
-    fl2 = np.where(ci["ls2"] > 0, ci["ls2"] / (1.0 - z * (1.0 - ci["ls2"])), 0.0)
+    genuine-stoppage fraction of dead time recurs (ADR-0024 z-correction); under Method 2 (ADR-0029)
+    that fraction is the per-(match,half) z_half, so the geometric-limit live factor is the fixed
+    point ls_half/(1 - z_half*(1-ls_half)) -- compensating ONLY for the stoppage (not normal flow)
+    within the added time. With z_half<1 this sits just above single-pass `on`. Reported as the upper
+    rail above `on`, not a swept knob."""
+    fl1 = np.where(ci["ls1"] > 0, ci["ls1"] / (1.0 - ci["z1"] * (1.0 - ci["ls1"])), 0.0)
+    fl2 = np.where(ci["ls2"] > 0, ci["ls2"] / (1.0 - ci["z2"] * (1.0 - ci["ls2"])), 0.0)
     ol1 = np.maximum(0.0, ci["ts1"] - ci["pl1"]) * fl1
     ol2 = np.maximum(0.0, ci["ts2"] - ci["pl2"]) * fl2
     ls2_safe = np.where(ci["ls2"] > 0, ci["ls2"], 1.0)
@@ -103,6 +113,37 @@ def genuine_stoppage_share(incident, seg):
     ri = incident[incident["period"].isin([1, 2])]
     counted = (ri["lower_bound_s"] + ri["silent_marked_s"]).sum()
     return float(counted / dead)
+
+
+def same_half_factors(seg, incident):
+    """Per-(match,window) SAME-HALF live share ls_half and gross-up z_half (Method 2, ADR-0029).
+
+    The omitted added-time minutes are assumed to look like the average minute of that WHOLE played
+    half -- regulation play PLUS the added time actually played (ALL period-h segments in
+    bip_segments, NOT clipped at 2700) -- so the CLOCK->LIVE conversion sources BOTH factors from the
+    SAME reference period (replacing the stoppage-window live share + the pooled scalar z=0.382 whose
+    asymmetry ADR-0027/0028 flagged):
+        ls_half = sum dur(in_play) / sum dur                       over the whole half
+        z_half  = (lower_bound_s + silent_marked_s) / sum dur(dead)   over the whole half
+    Residual silent is EXCLUDED from z_half (a frozen estimator constant, not a per-event mechanism),
+    matching genuine_stoppage_share's pooled z definition. A half with zero dead time gets z_half=0
+    (no gross-up to apply). Returns two dicts keyed (match_id, window)."""
+    s = seg.copy()
+    s["dur"] = s["end_s"] - s["start_s"]
+    half = s[s["period"].isin([1, 2])]
+    tot = half.groupby(["match_id", "period"])["dur"].sum()
+    live = half[half["in_play"]].groupby(["match_id", "period"])["dur"].sum()
+    dead = half[~half["in_play"]].groupby(["match_id", "period"])["dur"].sum()
+    counted = (incident.assign(_c=incident["lower_bound_s"] + incident["silent_marked_s"])
+               .query("period in [1, 2]").set_index(["match_id", "period"])["_c"])
+    wmap = {1: "1H", 2: "2H"}
+    ls_half, z_half = {}, {}
+    for (mid, per), t in tot.items():
+        w = wmap[per]
+        ls_half[(mid, w)] = float(live.get((mid, per), 0.0) / t) if t > 0 else 0.0
+        d = float(dead.get((mid, per), 0.0))
+        z_half[(mid, w)] = float(counted.get((mid, per), 0.0) / d) if d > 0 else 0.0
+    return ls_half, z_half
 
 
 def two_h_addable_share(incident):
@@ -220,16 +261,18 @@ def main() -> None:
     # bootstrap, so the headline X% is reproducible without any Monte Carlo (ADR-0019).
     rng = np.random.default_rng(cfg["seed"] + 1)
 
-    # canonical live-minutes + live-share per (match, window) -- the SAME table that feeds lambda
-    # exposure (build_lambda_cells) and per-match omitted-live, so they cannot drift (DC1).
+    # canonical live-minutes per (match, window) -- the lambda-EXPOSURE table (build_lambda_cells).
+    # Method 2 (ADR-0029) sources the CLOCK->LIVE conversion live share from the WHOLE played half
+    # instead (same_half_factors below), NOT this stoppage-window table, so omitted-live and
+    # lambda-exposure live share are now DIFFERENT objects -- the live-share cancellation (ADR-0026)
+    # is deliberately broken.
     pmap = {"1H_stoppage": "1H", "2H_stoppage": "2H"}
-    live_min, ls_ratio = {}, {}
+    live_min = {}
     for r in live_share.itertuples(index=False):
         w = pmap.get(r.phase)
         if w is None:
             continue
         live_min[(r.match_id, w)] = r.live_seconds / 60.0
-        ls_ratio[(r.match_id, w)] = r.live_share
     played = {}
     for r in pis.itertuples(index=False):
         if r.period in (1, 2):
@@ -247,15 +290,25 @@ def main() -> None:
     f2 = two_h_addable_share(incident)
     f1 = 1.0 - f2
     fshare = {"1H": f1, "2H": f2}
-    # z = genuine-stoppage fraction of dead time (ADR-0024): the time-wasting gross-up recurs only
-    # z*(1-live_share) of the added-time clock, not the full dead share. Single pooled scalar.
+    # Method 2 (ADR-0029): per-(match,half) SAME-HALF live share + gross-up z replace the
+    # stoppage-window live share + the pooled scalar z in the CLOCK->LIVE conversion. The pooled
+    # scalar z_genuine is kept ONLY as a reported diagnostic (pooled-mean of z_half vs the old 0.382).
+    ls_half, z_half = same_half_factors(seg, incident)
     z_genuine = genuine_stoppage_share(incident, seg)
-    print(f"  genuine-stoppage share z={z_genuine:.3f} (gross-up recurs z*(1-live_share), "
-          f"not the full dead share)")
-    residual_s = float(sil["residual_silent_s"])
+    lsh_mean = float(np.mean([v for v in ls_half.values()]))
+    zh_mean = float(np.mean([v for v in z_half.values()]))
+    print(f"  Method 2 same-half conversion (ADR-0029): mean ls_half={lsh_mean:.3f}, "
+          f"mean z_half={zh_mean:.3f}  (vs pooled scalar z={z_genuine:.3f})")
+    # ADR-0030: era-conditional residual. PRE matches (celebration credited as excess) use the re-fit
+    # PRE residual; POST (full-gap celebration) keeps 24.2s. Keyed by match_id so ts_window_min scales
+    # the right value by the window addable share fshare[window] (matching s05's per-match residual).
+    post_resid_s = float(sil["residual_silent_s"])
+    pre_resid_s = float(sil["residual_silent_pre_s"])
+    match_resid_s = {int(m): (pre_resid_s if gr == "PRE" else post_resid_s)
+                     for m, gr in zip(matches["match_id"], matches["group"])}
     sigma_full_min = float(sil["estimator_mae_min"]) * math.sqrt(math.pi / 2.0)
-    print(f"  addable share f2(2H)={f2:.3f} f1(1H)={f1:.3f}; residual {residual_s:.1f}s split -> "
-          f"1H {residual_s * f1:.1f}s / 2H {residual_s * f2:.1f}s; estimator sigma_full="
+    print(f"  addable share f2(2H)={f2:.3f} f1(1H)={f1:.3f}; residual PRE {pre_resid_s:.1f}s / POST "
+          f"{post_resid_s:.1f}s (ADR-0030 era-conditional) split by fshare; estimator sigma_full="
           f"{sigma_full_min:.2f}min (MAE {sil['estimator_mae_min']}min)")
 
     def ts_window_min(mid, window, knob):
@@ -264,7 +317,7 @@ def main() -> None:
         if knob == "silent_none":
             s = lb
         elif knob == "silent_marked":
-            s = lb + sm + residual_s * fshare[window]
+            s = lb + sm + match_resid_s.get(int(mid), post_resid_s) * fshare[window]
         elif knob == "silent_all":
             s = lb + sa
         else:
@@ -309,21 +362,27 @@ def main() -> None:
         # per-window per-match arrays + per-window cell indices for the bootstrap. For the 2H
         # window the decay needs BOTH endpoint cells per match: the observed 2H-stoppage rate
         # (decay START) and the open-play floor (decay FLOOR). 1H is UNCHANGED (observed 1H lambda).
-        ts_arr, played_arr, ls_arr, fl_arr, olive, lam, cellidx = {}, {}, {}, {}, {}, {}, {}
+        ts_arr, played_arr, ls_arr, z_arr, fl_arr, olive, lam, cellidx = ({}, {}, {}, {},
+                                                                          {}, {}, {}, {})
         distinct, cell_ce = {}, []
         floor2 = flooridx2 = None
         for window in ("1H", "2H"):
             tsw = np.array([ts_window_min(m, window, ts_knob) for m in eligible])
             plw = np.array([played.get((m, window), 0.0) for m in eligible])
+            # Method 2 (ADR-0029): SAME-HALF live share + per-(match,half) gross-up z (over the whole
+            # played half), NOT the stoppage-window live share / pooled scalar z. nan_to_num guards a
+            # half with no segments (never expected for periods 1-2).
             lsw = np.nan_to_num(
-                np.array([ls_ratio.get((m, window), 0.0) for m in eligible]), nan=0.0)
+                np.array([ls_half.get((m, window), 0.0) for m in eligible]), nan=0.0)
+            zw = np.nan_to_num(
+                np.array([z_half.get((m, window), 0.0) for m in eligible]), nan=0.0)
             # O3 gross-up (ADR-0021 #3 / ADR-0024 z-correction): inflate omitted CLOCK for the
             # stoppage WITHIN the added time, then take the live portion. Only the genuine-stoppage
-            # fraction z of dead time recurs (refs compensate stoppage, not normal flow) -- NOT the
-            # whole dead share (old z=1 over-credited the tail). One pass adds z*(1-ls) of the clock,
-            # so the live factor is lsw*(1 + z*(1-lsw)) vs lsw at base. The decay HORIZON tracks this
-            # via T = olive/live_share (= the grossed clock), so horizon and live-minutes never drift.
-            flw = lsw * (1.0 + z_genuine * (1.0 - lsw)) if grossup else lsw
+            # fraction z_half of dead time recurs (refs compensate stoppage, not normal flow) -- NOT
+            # the whole dead share. One pass adds z_half*(1-ls) of the clock, so the live factor is
+            # ls*(1 + z_half*(1-ls)) vs ls at base. The decay HORIZON tracks this via T = olive/ls
+            # (= the grossed clock), so horizon and live-minutes never drift.
+            flw = lsw * (1.0 + zw * (1.0 - lsw)) if grossup else lsw
             olivew = np.maximum(0.0, tsw - plw) * flw
             cnt_w = np.zeros(n)
             exp_w = np.zeros(n)
@@ -350,6 +409,7 @@ def main() -> None:
                     fidx[i] = distinct[fk]
             exp_safe = np.where(exp_w > 0, exp_w, 1.0)
             ts_arr[window], played_arr[window], ls_arr[window], fl_arr[window] = tsw, plw, lsw, flw
+            z_arr[window] = zw
             olive[window] = olivew
             lam[window] = cnt_w / exp_safe * (exp_w > 0)
             cellidx[window] = idx_w
@@ -374,9 +434,9 @@ def main() -> None:
         central_2h_only[knob_set] = float(p_change(mu["2H_only"]).mean())
         if knob_set == central:
             central_inputs = dict(
-                ts1=ts_arr["1H"], pl1=played_arr["1H"], ls1=ls_arr["1H"], lam1=lam["1H"],
-                ts2=ts_arr["2H"], pl2=played_arr["2H"], ls2=ls2, obs2=obs2, floor2=floor2,
-                T2_grossed=T2)
+                ts1=ts_arr["1H"], pl1=played_arr["1H"], ls1=ls_arr["1H"], z1=z_arr["1H"],
+                lam1=lam["1H"], ts2=ts_arr["2H"], pl2=played_arr["2H"], ls2=ls2, z2=z_arr["2H"],
+                obs2=obs2, floor2=floor2, T2_grossed=T2)
 
         # bootstrap: one Jeffreys-Gamma lambda draw per distinct cell per iteration (shared across
         # matches in that cell). The decay is a transform of TWO drawn rates, so the 2H window draws
@@ -439,7 +499,7 @@ def main() -> None:
             summary_rows.append({
                 "window": w, "group": "all",
                 "knob_set": "silent_marked|overall|pooled_all|hl=4.0|geometric",
-                "pct_changed": _geom_ceiling(w, central_inputs, z_genuine),
+                "pct_changed": _geom_ceiling(w, central_inputs),
                 "pct_outcome_flip": float("nan"),
                 "ci_lo": float("nan"), "ci_hi": float("nan"),
                 "flip_ci_lo": float("nan"), "flip_ci_hi": float("nan"),
@@ -459,7 +519,8 @@ def main() -> None:
         pd.DataFrame({
             "match_id": eligible,
             "omitted_2h_clock_min": ci["T2_grossed"],
-            "live_share_2h": ci["ls2"],
+            "live_share_2h": ci["ls2"],            # Method 2: SAME-HALF 2H live share (ADR-0029)
+            "z_half_2h": ci["z2"],                 # Method 2: per-match 2H gross-up z (ADR-0029)
             "omitted_2h_live_min": ci["T2_grossed"] * ci["ls2"],
             "obs_rate": ci["obs2"],
             "floor_rate": ci["floor2"],
@@ -505,7 +566,7 @@ def main() -> None:
     print("  GROSS-UP RAILS (silent_marked|overall|pooled_all, h=4 central):")
     for win in (headline_window, "2H_only"):
         off, on = at("silent_marked", 4.0, "off", win), at("silent_marked", 4.0, "on", win)
-        geom = _geom_ceiling(win, central_inputs, z_genuine) if central_inputs else float("nan")
+        geom = _geom_ceiling(win, central_inputs) if central_inputs else float("nan")
         if off is not None and on is not None:
             print(f"    {win:<7}  off {off['pct_changed']:.3f} -> on(CENTRAL) {on['pct_changed']:.3f} "
                   f"-> geometric-ceiling {geom:.3f}")

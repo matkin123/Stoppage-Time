@@ -15,7 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from src.lib import config
+from src.lib import config, editorial
 
 
 def _save(fig, name):
@@ -49,11 +49,41 @@ def fig_stoppage_by_state(prod):
                (prod["metric"] == "goals")]
     if sub.empty:
         return None
-    fig, ax = plt.subplots(figsize=(6, 5))
-    ax.bar(sub["state"], sub["rate"],
-           yerr=[sub["rate"] - sub["ci_lo"], sub["ci_hi"] - sub["rate"]], capsize=4)
-    ax.set_ylabel("goals per live-minute (2H stoppage)")
-    ax.set_title("2H-stoppage goal productivity by state at 90'")
+    order = ["tied", "non_tied", "all"]
+    label = {"tied": "Level at 90'", "non_tied": "One side ahead", "all": "All matches"}
+    rows = {r["state"]: r for _, r in sub.iterrows()}
+    rows = [rows[s] for s in order if s in rows]
+    rates = [r["rate"] for r in rows]
+    lo = [r["rate"] - r["ci_lo"] for r in rows]
+    hi = [r["ci_hi"] - r["rate"] for r in rows]
+    # "All matches" is the reference (red); the two score states are neutral — the
+    # point is that the score at 90' barely moves the rate.
+    colors = [editorial.HILITE if r["state"] == "all" else editorial.NEUTRAL for r in rows]
+
+    with plt.rc_context(editorial.RC):
+        fig = plt.figure(figsize=(8.0, 6.6))
+        ax = fig.add_axes([0.12, 0.135, 0.82, 0.585])
+        x = range(len(rows))
+        ax.bar(x, rates, width=0.6, color=colors, zorder=3)
+        ax.errorbar(x, rates, yerr=[lo, hi], fmt="none", ecolor="#3C4043",
+                    capsize=7, lw=1.3, zorder=4)
+        for xi, r in zip(x, rows):
+            ax.text(xi, r["ci_hi"] + 0.004, f"{r['rate']:.3f}", ha="center",
+                    va="bottom", fontsize=12, fontweight="bold", color=editorial.INK)
+        ax.set_xticks(list(x))
+        ax.set_xticklabels([label[r["state"]] for r in rows], fontsize=11)
+        ax.set_ylabel("Goals per live minute", fontsize=11)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.02f}"))
+        ax.set_ylim(0, max(r["ci_hi"] for r in rows) * 1.18)
+        ax.grid(axis="y", color=editorial.GRID, lw=0.8, zorder=0)
+        editorial.despine(ax, keep=("bottom",))
+        editorial.titleblock(
+            fig,
+            "Whatever the score, stoppage time scores the same",
+            ["Goals per live minute in second-half stoppage, by the score when the 90th",
+             "minute is reached. Leading, trailing or level, the rate barely moves."],
+            "Second-half stoppage only, across all 314 matches from six tournaments, "
+            "2018–2024.\nSource: StatsBomb open data; author’s analysis.")
     return _save(fig, "f02_stoppage_by_state.png")
 
 
@@ -126,64 +156,77 @@ def fig_sensitivity():
 
 def fig_productivity_decay():
     """Promote the IMPL-8 prototype to a permanent figure (ADR-0024). Traces to decay_profile.parquet
-    (the central spec's per-match grossed omitted-2H clock + obs/floor rates) and avg_lambda (s08)."""
+    (the central spec's per-match grossed omitted-2H clock + obs/floor rates).
+
+    Editorial redesign: the central 4-min half-life is the SUBJECT (red); the 2- and 8-min
+    bounds are neutral context. Reference lines (observed stoppage rate, open-play floor) are
+    named in white space, not a legend. The x-axis is held to the realistic added-minute window
+    (curves are flat at the floor well before the longest omitted clock), so the three half-life
+    curves stay visibly separated where they are direct-labelled."""
     import numpy as np
 
-    from src.s08_counterfactual import avg_lambda
     path = config.PROCESSED / "decay_profile.parquet"
     if not path.exists():
         return None
     df = pd.read_parquet(path)
     obs = float(df["obs_rate"].iloc[0])
     floor = float(df["floor_rate"].iloc[0])
-    T = df["omitted_2h_clock_min"].to_numpy()
-    T = T[np.isfinite(T)]
-    tmax = max(12.0, float(np.nanmax(T)) if len(T) else 12.0)
-    curves = [(2.0, "tab:red"), (4.0, "tab:blue"), (8.0, "tab:orange")]
+    R = obs - floor
 
-    fig, (axL, axR) = plt.subplots(1, 2, figsize=(14, 5))
-    # extra horizontal gap so the left chart's right-hand twin-axis label does not
-    # collide with the right chart's left-hand y-axis label
-    fig.subplots_adjust(wspace=0.42)
+    tmax = 12.0  # realistic added-minute window; curves are flat at the floor beyond this
 
-    # left: per-marginal-minute lambda(t) = floor + (obs-floor)*0.5**(t/h)
-    t = np.linspace(0.0, tmax, 240)
-    axhL = axL.twinx()
-    axhL.hist(T, bins=24, color="0.88", zorder=0)
-    axhL.set_ylabel("matches (omitted-2H clock)")
-    axhL.set_zorder(axL.get_zorder() - 1)
-    axL.patch.set_visible(False)
-    for h, c in curves:
-        lab = f"h={h:g} min" + ("  (CENTRAL)" if h == 4.0 else "")
-        axL.plot(t, floor + (obs - floor) * 0.5 ** (t / h), color=c, lw=2, label=lab)
-    axL.axhline(obs, ls="--", color="k", lw=1, label=f"observed 2H-stoppage ({obs:.4f})")
-    axL.axhline(floor, ls=":", color="gray", lw=1.2, label=f"open-play floor ({floor:.4f})")
-    axL.set_xlabel("marginal omitted 2H minute t")
-    axL.set_ylabel(r"goals per live-minute  $\lambda(t)$")
-    axL.set_title("Per-minute productivity decay")
-    axL.set_xlim(0, tmax)
-    axL.legend(fontsize=7, loc="upper right")
+    # (half-life, colour, lineweight, label, label dy in points) — central is the highlight.
+    # Slow nudged up / fast nudged down so the right-edge labels never touch.
+    curves = [(2.0, editorial.NEUTRAL, 1.6, "Fades fast (2 min)", -11),
+              (4.0, editorial.HILITE, 2.6, "Central: 4-min half-life", 0),
+              (8.0, editorial.SLATE, 1.6, "Fades slow (8 min)", 11)]
 
-    # right: effective window-average rate avg_lambda(T,h) a match actually gets
-    Tg = np.linspace(0.02, tmax, 240)
-    axhR = axR.twinx()
-    axhR.hist(T, bins=24, color="0.88", zorder=0)
-    axhR.set_ylabel("matches (omitted-2H clock)")
-    axhR.set_zorder(axR.get_zorder() - 1)
-    axR.patch.set_visible(False)
-    for h, c in curves:
-        lab = f"h={h:g} min" + ("  (CENTRAL)" if h == 4.0 else "")
-        axR.plot(Tg, avg_lambda(Tg, h, obs, floor), color=c, lw=2, label=lab)
-    axR.axhline(obs, ls="--", color="k", lw=1)
-    axR.axhline(floor, ls=":", color="gray", lw=1.2)
-    if len(T):
-        meanT = float(np.nanmean(T))
-        axR.axvline(meanT, color="green", lw=1.2, label=f"mean T = {meanT:.1f} min")
-    axR.set_xlabel("total omitted 2H clock minutes T (grossed)")
-    axR.set_ylabel(r"effective average  $\overline{\lambda}(T)$")
-    axR.set_title("Effective rate a match actually gets")
-    axR.set_xlim(0, tmax)
-    axR.legend(fontsize=7, loc="upper right")
+    with plt.rc_context(editorial.RC):
+        fig = plt.figure(figsize=(9.8, 6.6))
+        H = fig.get_size_inches()[1]
+        content_top = editorial.titleblock(
+            fig,
+            "The model assumes that stoppage time scoring decays in omitted minutes",
+            "Goals arrive fastest the moment stoppage time begins, then the rate cools back "
+            "toward regular play the longer the unplayed stretch runs. The model’s central "
+            "choice is a 4-minute half-life, bracketed by a faster and a slower alternative.",
+            "Built from second-half stoppage scoring across all 314 matches, 2018–2024. "
+            "Central spec: 4-minute half-life.\nSource: StatsBomb open data; author’s analysis.",
+            content_gap_in=0.42)
+        ax_bottom = 0.155
+        ax_top = content_top - 0.30 / H  # leave room for the axes (sub)title
+        ax = fig.add_axes([0.085, ax_bottom, 0.66, ax_top - ax_bottom])
+        ylim = (floor - R * 0.18, obs + R * 0.24)
+
+        # per-marginal-minute lambda(t) = floor + (obs-floor)*0.5**(t/h)
+        t = np.linspace(0.0, tmax, 240)
+        for h, c, lw, lab, dy in curves:
+            y = floor + R * 0.5 ** (t / h)
+            ax.plot(t, y, color=c, lw=lw, zorder=3)
+            ax.annotate(lab, (t[-1], y[-1]), textcoords="offset points", xytext=(8, dy),
+                        va="center", fontsize=8.5, color=c,
+                        fontweight="bold" if h == 4.0 else "normal")
+
+        # reference lines, named in clear white space at x=10 (both labels left-aligned
+        # to the same start: observed sits above its dashed line, regular below its dotted line)
+        ax.axhline(obs, ls="--", color="#3C4043", lw=1.1, zorder=2)
+        ax.axhline(floor, ls=":", color=editorial.REF, lw=1.2, zorder=2)
+        ax.annotate("Observed stoppage-time rate", (8.4, obs), textcoords="offset points",
+                    xytext=(0, 3), ha="left", va="bottom", fontsize=8.5, style="italic",
+                    color="#3C4043")
+        ax.annotate("Regular open-play rate", (8.4, floor), textcoords="offset points",
+                    xytext=(0, -3), ha="left", va="top", fontsize=8.5, style="italic",
+                    color=editorial.REF)
+
+        ax.set_xlabel("Minutes into the unplayed stoppage time", fontsize=10.5)
+        ax.set_ylabel("Goals per live minute", fontsize=10.5)
+        ax.set_title("Decayed goal-scoring rate for each hypothetical added minute",
+                     fontsize=11.5, color=editorial.INK, pad=8, loc="left")
+        ax.set_xlim(0, tmax * 1.34)
+        ax.set_ylim(*ylim)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.02f}"))
+        ax.grid(color=editorial.GRID, lw=0.7, zorder=0)
+        editorial.despine(ax, keep=("left", "bottom"))
 
     return _save(fig, "f06_productivity_decay.png")
 

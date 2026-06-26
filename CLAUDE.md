@@ -8,12 +8,18 @@ Headline target: **"Stoppage time is a sham; measured properly, X% of matches wo
 differently."** `X%` is the one modeled claim — it ships with a confidence interval and a
 sensitivity table, not a point estimate.
 
-**LOCKED (ADR-0025, 2026-06-19): X% = 23.6% [95% CI 20.6%, 27.4%]**, window 1H+2H, central
+**LOCKED (ADR-0031, 2026-06-25): X% = 24.8% [95% CI 21.7%, 28.6%]**, window 1H+2H, central
 knob_set `silent_marked|overall|pooled_all|hl=4.0|on`. Framing: *if stoppage time were measured
-and awarded per the rulebook, ~24% of matches would have ended with a DIFFERENT SCORELINE* (≥1
+and awarded per the rulebook, ~25% of matches would have ended with a DIFFERENT SCORELINE* (≥1
 extra goal in the omitted added time). The stricter "different RESULT" (winner/draw flips) is
-**12.1% [10.6%, 14.2%]** — always reported separately. Lead assumption band 21.1%–26.1%; full
-joint envelope 18.6%–27.3%. The modeling pipeline is DONE; `docs/decisions.md` is authoritative.
+**13.0% [11.3%, 15.1%]** — always reported separately. Lead assumption band 21.4%–27.3%; full
+joint envelope 18.9%–28.6%. The modeling pipeline is DONE; `docs/decisions.md` is authoritative.
+
+> **Re-locked 2026-06-25 (ADR-0031):** adopts Method 2 (same-half conversion, ADR-0029) + the
+> PRE-only goal-celebration allowance (ADR-0030). Supersedes the original ADR-0025 lock
+> (23.6% / 12.1%); the re-centering stays inside the previously published outer envelope. POST
+> `true_stoppage` is byte-identical to the prior production — the entire +1.2 pp move is PRE-driven.
+> `processed/*.parquet`, `figures/`, and `docs/numbers_ledger.md` are regenerated; pytest green (11).
 
 Standard of proof: **every number traces to a script + a checkpointed table + a documented
 assumption.** If a figure can't be traced that way, it doesn't go in the article.
