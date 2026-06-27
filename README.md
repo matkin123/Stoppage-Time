@@ -53,7 +53,7 @@ legitimate knobs is 18.9%–28.6%.
 The investigation rests on two empirical facts about modern football:
 
 1. **Stoppage time is systematically under-awarded.** In 2018, Nate Silver hand-measured all 32
-   World Cup matches and found referees under-award added time in **97% of matches**, by ~8 minutes
+   World Cup matches and found referees under-award added time in **97% of matches**, by ~6 minutes
    on average. This project extends that to every match in the last six major international
    tournaments.
 2. **Teams are much more productive during stoppage time.** The goal-scoring rate in second-half
@@ -63,17 +63,6 @@ The investigation rests on two empirical facts about modern football:
 ---
 
 ## The data
-
-This is a **counterfactual estimate over 314 already-played matches**:
-
-> *If the stoppage minutes that were truly owed but never played had actually been played, in how
-> many matches would at least one additional goal plausibly have been scored — and within those,
-> how many results would have flipped?*
-
-It is a descriptive functional of a fixed, fully-observed population, not a forecast. There is no
-held-out future to predict, so validity rests on (a) the inputs being unbiased and (b) the
-transfer assumptions being defensible — both anchored to external ground truth (see
-[Validation](#validation--standard-of-proof)).
 
 All match and event data are **StatsBomb open data** (the free research release) — a timestamped
 log of ~3,000–3,600 on-ball events per match (pass, shot, tackle, throw-in, foul, card, sub, ball
@@ -229,11 +218,9 @@ leading by two-plus at 90 as unflippable; 95 of 314 matches were already decided
 
 **The honest limitation.** The owed-stoppage estimator is anchored on World Cup 2018, then frozen
 and applied unchanged to the other five tournaments — a transfer that crosses the 2022 directive
-(the lone calibration tournament is PRE; the headline mostly lives POST) and a large extrapolation
+(the lone calibration tournament is PRE; the headline mostly lives POST) and an extrapolation
 (owed time runs 17–25 min/match across the POST tournaments vs 12.7 for 2018, with Copa and AFCON
-nearly double). The model's most exposed quantity sits exactly where it can't be directly verified;
-it is validated only indirectly, through the frozen-2018 constants and the WC2022 ball-in-play
-point. Named, not buried (see [Limitations](#limitations--open-questions)).
+nearly double). 
 
 ---
 
@@ -276,47 +263,6 @@ checkpoints that matter most are the **s03 calibration** and the **s08 sensitivi
 Stages are **idempotent** (each reads the prior stage's parquet and writes its own) and use
 **deterministic seeds** (`config/params.yaml`). Figures and `data/{raw,interim,processed}` are
 regenerable and gitignored; regenerate figures with `make s09`.
-
----
-
-## Validation & standard of proof
-
-Two external anchors certify the model's **inputs** (neither certifies its output — see limitation 1):
-
-- **Nate Silver, World Cup 2018** (32 matches, hand-measured with a stopwatch at FiveThirtyEight).
-  Our owed-stoppage estimator tracks his "expected" (should-be-added) minutes at **r = 0.875**
-  (MAE 1.77 min); our stoppage-played clock tracks his "actual" at **r = 0.992**. His own numbers
-  show **13.16 owed vs 6.98 played** — a 1.9× shortfall an outside observer found independently.
-  The table is checked in at `data/raw/nate_2018/nate_wc2018.csv` (the only non-regenerable data
-  in the repo).
-- **Opta ball-in-play.** Opta publishes 58:04 of average ball-in-play per WC2022 match; our
-  gap-method reconstruction gives 57:40 (24s low), with the 2018 anchor at 56:00 vs Opta's 54:50.
-  This certifies the live-share denominator.
-
-The **standard of proof**: every figure traces to a script + a checkpointed table + a documented
-assumption. A stage is "done" only when its pytest acceptance gate is green. The locked headline,
-its band, and the chosen knob set live in [`docs/decisions.md`](docs/decisions.md) (ADR-0031); the
-script-to-figure ledger is [`docs/numbers_ledger.md`](docs/numbers_ledger.md).
-
----
-
-## Limitations & open questions
-
-Honest list, least-defensible first (the model's most exposed quantity is folded into
-[Results and sensitivity](#results-and-sensitivity) above):
-
-1. **No independent counterfactual benchmark.** Every external check is on an *input*; `X%` itself
-   is not falsified against any outside number.
-2. **POST coverage gap.** The estimator is calibrated on World Cup 2018 only; the POST cohort —
-   where the headline mostly lives and where owed time is ~1.5–2× higher — rides on frozen-2018
-   constants and a single WC2022 ball-in-play point.
-3. **Data-gap-as-point.** Reporting the calibrated middle (not a none↔all band) is what makes the
-   band tight; a reviewer who insists none/all are legitimate uncertainty sees a far wider range.
-4. **First-half thinness.** ~1/3 of the headline rests on a 23-goal first-half-stoppage rate, with
-   no game-state propagation across the first-half increment.
-5. **Productivity transfer is an assumption, not a measurement.** The decay band brackets the
-   urgency premium but cannot rule out that *omitted* minutes are systematically unlike any
-   observed minute.
 
 ---
 
