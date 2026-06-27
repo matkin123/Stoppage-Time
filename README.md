@@ -1,7 +1,8 @@
 # Stoppage Time
 
-> *If stoppage time were measured and awarded in full, **23.6%** of matches would have finished
-> with a different scoreline — and **12.1%** with a different result.*
+> *If stoppage time were measured and awarded in full, **24.8%** of matches would have finished
+> with a different scoreline [95% CI 21.7%, 28.6%] — and **13.0%** with a different result
+> [11.3%, 15.1%].*
 
 A reproducible quantitative investigation into football stoppage time. Across **314 matches** from
 six major international tournaments, referees systematically under-award added time: the minutes
@@ -14,33 +15,54 @@ traces to a script, a checkpointed parquet table, and a documented assumption (s
 [`docs/decisions.md`](docs/decisions.md), the ADR log, and [`CLAUDE.md`](CLAUDE.md), the project
 contract).
 
+> **The public write-up is [`docs/substack_post_v3.md`](docs/substack_post_v3.md)** — the latest
+> narrative version. This README mirrors its structure (headline, the data, how it's measured, the
+> four objections, results & sensitivity) and is kept in sync with it. Always read the
+> highest-numbered `docs/substack_post_v*` as the current draft; the headline lock lives in
+> [`docs/decisions.md`](docs/decisions.md) ADR-0031.
+
 ---
 
 ## Headline results
 
 | Claim | Central | 95% CI (sampling) | Assumption band |
 |---|---|---|---|
-| **Different scoreline** (≥1 extra goal anywhere in the omitted added time) | **23.6%** | **[20.6%, 27.4%]** | 21.1% – 26.1% |
-| **Different result** (the winner/draw actually changes) | **12.1%** | **[10.6%, 14.2%]** | — |
-| Second-half-only variant (comparison, not the headline) | 16.0% | [14.0%, 18.5%] | 14.1% – 17.4% |
+| **Different scoreline** (≥1 extra goal anywhere in the omitted added time) | **24.8%** | **[21.7%, 28.6%]** | 21.4% – 27.3% |
+| **Different result** (the winner/draw actually changes) | **13.0%** | **[11.3%, 15.1%]** | — |
+| Second-half-only variant (comparison, not the headline) | 17.0% | [15.0%, 19.5%] | 15.4% – 18.5% |
 
 *Window: full match (first- and second-half stoppage combined), pooled across all 314 matches.
 Central knob set `silent_marked | overall | pooled_all | hl=4.0 | on`. Locked in
-[`docs/decisions.md`](docs/decisions.md) ADR-0025.*
+[`docs/decisions.md`](docs/decisions.md) ADR-0031 (re-lock; supersedes ADR-0025's 23.6% / 12.1%).*
 
 **"Different scoreline" and "different result" are kept strictly apart.** A different *scoreline*
-(≥1 extra goal anywhere, 23.6%) is weaker than a different *result* (the winner or draw actually
-changes, 12.1%): 95 of 314 matches led by two-plus goals at 90:00 and are treated as unflippable.
+(≥1 extra goal anywhere, 24.8%) is weaker than a different *result* (the winner or draw actually
+changes, 13.0%): 95 of 314 matches led by two-plus goals at 90:00 and are treated as unflippable.
 Conflating the two would overstate the claim, so they are always reported separately.
 
 Two uncertainty objects are also kept apart throughout: the **sampling CI** (finite goal counts +
-estimator error) and the **specification / assumption band** (how `X%` moves as modeling choices
-change). Once the data-gap handling is calibrated, neither dominates — the one-factor band (5.0 pts)
-is ≈0.7× the sampling width, and the full joint envelope across all legitimate knobs is 18.6%–27.3%.
+estimator error, width 6.9 pts) and the **specification / assumption band** (how `X%` moves as
+modeling choices change). Once the data-gap handling is calibrated, neither dominates — the
+one-factor band (5.9 pts) is ≈0.9× the sampling width, and the full joint envelope across all
+legitimate knobs is 18.9%–28.6%.
 
 ---
 
-## What this is
+## Why I dug into this
+
+The investigation rests on two empirical facts about modern football:
+
+1. **Stoppage time is systematically under-awarded.** In 2018, Nate Silver hand-measured all 32
+   World Cup matches and found referees under-award added time in **97% of matches**, by ~8 minutes
+   on average. This project extends that to every match in the last six major international
+   tournaments.
+2. **Teams are much more productive during stoppage time.** The goal-scoring rate in second-half
+   stoppage is **1.9× the rate of the average minute** — so the chronically omitted minutes are
+   exactly the ones most likely to flip a match.
+
+---
+
+## The data
 
 This is a **counterfactual estimate over 314 already-played matches**:
 
@@ -53,7 +75,9 @@ held-out future to predict, so validity rests on (a) the inputs being unbiased a
 transfer assumptions being defensible — both anchored to external ground truth (see
 [Validation](#validation--standard-of-proof)).
 
-### The matches
+All match and event data are **StatsBomb open data** (the free research release) — a timestamped
+log of ~3,000–3,600 on-ball events per match (pass, shot, tackle, throw-in, foul, card, sub, ball
+out of play). No xG, no 360 data.
 
 | Tournament | Era | Matches |
 |---|---|---|
@@ -75,79 +99,141 @@ and treats PRE/POST only as a robustness axis.
 
 ## How it's measured
 
-The pipeline reconstructs, for each match, three quantities and combines them in closed form:
+The core idea is simple: take all 314 matches as played; for each, append the stoppage the referee
+should have added but didn't, and ask whether at least one more goal would plausibly have dropped
+in; average that probability across the 314 matches. The work is making each step checkable. The
+pipeline reconstructs three quantities per match and combines them in closed form.
 
-1. **Stoppage owed (`T_true`)** — the added time that *should* have been played. Built bottom-up
-   from identifiable dead time (celebrations, subs, cards, injuries, excess restart time) plus
-   marker-confirmed "data gaps," with a single calibrated residual constant. Calibrated against
-   Nate Silver's hand-measured World Cup 2018 stopwatch data (**r = 0.825**, MAE 2.44 min).
-2. **Stoppage actually played (`T_play`)** — whistle-to-whistle added time read off the event
-   clock (matches Nate's "actual" column at **r = 0.992**).
-3. **Omitted minutes (`O = max(0, T_true − T_play)`)** — positive in **97% of matches**: owed
-   17.3, played 8.9, **omitted 8.6** min/match (of which ~5.1 are live ball-in-play).
+**Step 1 — Measure stoppage *played* and stoppage *owed*, and validate against Nate Silver.**
+The Laws of the Game (Law 7) tell the referee to add all time lost to subs, injuries,
+celebrations, cards, VAR, and time-wasting — but put a number on none of it. So owed stoppage needs
+the thresholds the Laws omit. We adopt Nate Silver's 2018 stopwatch allowances unchanged (generous:
+a throw-in gets 20 s before any of it counts):
 
-Extra goals in the omitted live minutes are priced with a Poisson model,
-`P(≥1 extra goal) = 1 − exp(−μ)`, where `μ = Σ_h λ_h · ℓ_h`. The headline `X%` is the mean of that
-per-match probability across all 314 matches. The metric is deterministic; randomness enters only
-the confidence-interval bootstrap.
+| Routine restart | Normal allowance (excess beyond this counts as owed) |
+|---|---|
+| Throw-in | 20 s |
+| Goal kick | 30 s |
+| Corner kick | 45 s |
+| Free kick | 60 s |
 
-The full write-up — estimand, identification, every load-bearing assumption, and the figures — is
-[`docs/model_review_v2.md`](docs/model_review_v2.md). It is self-contained (figures embedded) and is
-the canonical methodological reference.
+Genuine stoppages (celebrations, subs, cards, injuries) are credited separately. Calibrated against
+Nate Silver's by-hand World Cup 2018 measurement, owed stoppage tracks his "expected" at
+**r = 0.875** (MAE 1.77 min) and stoppage *played* tracks his "actual" at **r = 0.992**. Across the
+314 matches, owed stoppage averages ~**17.6** min/match and played ~**8.9**, leaving ~**8.8**
+omitted minutes, positive in **97%** of matches. *(In 2022 FIFA directed referees to add all
+time-wasting — chiefly full goal-celebration time rather than perceived excess; the estimator
+applies this PRE/POST-conditionally.)*
 
-### Sensitivity (each knob swept with the others held at central, full match)
+**Step 2 — Reconstruct the live football, and check it against outside numbers.** Dead time is the
+gap between two timestamps; summed across a match, the gaps give *ball-in-play*. The reconstruction
+reads **57:40** for WC2022 against Opta's 58:04 (−24s), and **56:00** for 2018 against Opta's 54:50
+(+70s), with FiveThirtyEight's 55:18 in between. A single global threshold sets how long a "silent"
+gap (no logged restart) must run before the ball counts as dead; sweeping it 12→30 s is the ±1 min
+of per-match uncertainty carried. The headline moves <0.1 pp across that whole range, because the
+live level enters the final number twice (rate and exposure) and largely cancels.
 
-| Modeling choice | Levels → X% | Spread |
-|---|---|---|
-| **λ source** | pooled **23.6** · POST-only 22.6 · regime-matched 23.8 · PRE-only 26.1 | ~3.5 pts |
-| **In-stoppage gross-up** | off 21.1 → **on 23.6** → geometric ceiling 24.2 | ~3.1 pts |
-| **Decay half-life** | h=2 22.2 · **h=4 23.6** · h=8 24.9 | ~2.7 pts |
-| **Conditioning** | overall **23.6** · tied/not-tied 23.4 | ~0.2 pts |
-| One-factor band (min–max of the above) | **21.1% – 26.1%** | ≈0.7× sampling |
-| Full joint envelope (all knobs together) | **18.6% – 27.3%** | ≈1.3× sampling |
+**Step 3 — Price the missing minutes.** Each omitted live minute is assigned a goal rate; expected
+extra goals is rate × minutes, and the chance of ≥1 extra goal follows from the Poisson formula:
 
-The data-gap handling is **not** treated as a sweepable knob: "credit none" (10.8%) and "credit
-all" (37.3%) are *known-biased bounds*, not honest uncertainty. The estimator is calibrated to the
-defensible middle and only its calibration error is propagated into the CI (see
-[`docs/decisions.md`](docs/decisions.md) ADR-0025).
+```
+ℓ_h  =  max(0, owed_h − played_h) × (same-half live share) × (in-stoppage gross-up)
+μ    =  λ₁ · ℓ₁  +  (decayed λ₂) · ℓ₂
+P    =  1 − e^(−μ)
+Headline  =  mean of P over 314 matches
+```
+
+`λ₁` is the first-half stoppage rate, held fixed; `λ₂` starts at the observed second-half stoppage
+rate and **decays** toward the open-play floor across the omitted window (why: Objection 1). An
+omitted minute is assumed to look like the average minute of that *same half* — its regulation play
+plus the added time actually played — not the few unusually dead minutes the referee did add. The
+metric is deterministic; randomness enters only the confidence-interval bootstrap.
+
+Full methodology (estimand, identification, every load-bearing assumption):
+[`docs/Methodology.md`](docs/Methodology.md) and the narrative
+[`docs/substack_post_v3.md`](docs/substack_post_v3.md).
 
 ---
 
-## Common objections
+## Objections
 
-**1. "If you added the missing minutes, teams would be less productive per minute — you can't price
-new time at the urgent end-of-game rate."**
+**1. "Add more time and teams won't keep scoring at the same rate."** True, and the model is built
+around it. Second-half stoppage is the most productive window on the field (**0.0816** goals/live-min,
+1.9× open play) — but the rate is endogenous to game state, so no omitted minute is priced at that
+peak. `λ₂` decays from 0.0816 toward the **open-play floor 0.0427** on a curve with half-life swept
+2–8 min (central 4); the floor *is* open play, so even maximal decay never prices added minutes
+below match-average football. The whole decay band runs **23.3% (fastest) to 26.1% (slowest)** —
+under three points around the 24.8% headline. *(Tell: when the 2022 directive roughly doubled added
+time, the per-minute rate barely moved — PRE 0.086, POST 0.080 — so the truth sits nearer the top of
+the band.)*
 
-Agreed in principle — and this is exactly why the model uses a **decay rate**, not the raw
-end-of-game rate. Second-half stoppage is the most productive window in the match
-(**0.0816** goals/live-min, ~1.9× the open-play average) precisely because it is short, late, and
-urgent. We do **not** assume newly-added minutes inherit that premium. For each marginal omitted
-second-half minute, the per-minute scoring rate **decays geometrically** from the observed
-second-half-stoppage rate (0.0816) toward the **open-play floor** (0.0427):
+| Window | Goals per live-minute | Goals (n) |
+|---|---|---|
+| 2nd-half stoppage (the late-game peak) | **0.0816** | 73 |
+| 1st-half stoppage | 0.0478 | 23 |
+| Regulation open play (the floor) | **0.0427** | 675 |
 
-```
-λ(t) = floor + (observed − floor) · 0.5^(t / h)
-```
+**2. "The high rate is just trailing teams chasing a level scoreline."** It isn't. Second-half
+stoppage scores at about the same rate whether the game is level at 90 (0.0886) or not (0.0786),
+with heavily overlapping intervals. Conditioning the entire model on score-at-90 barely moves the
+headline, **24.8% → 24.5%**.
 
-The half-life `h` is the explicit knob and is reported as a band (`h ∈ [2, 8]` min, central
-`h = 4`). The two bounding cases fall out exactly: `h → ∞` is "no decay" (full premium) and
-`h → 0` is "full decay" (every added minute at the open-play floor). Crucially, **the floor is the
-open-play rate** — even maximal decay never prices added minutes below match-average pace, because
-they remain football, not nothing. The decay moves the headline only between 22.2% and 24.9%; the
-objection is real, it is modeled, and it does not break the claim. (Detail:
-[`docs/model_review_v2.md`](docs/model_review_v2.md) §4.1.)
+**3. "The high rate is a knockout-stage effect."** It isn't. Group stage 0.0847 (56 goals / 660.8
+live-min) vs elimination 0.0727 (17 / 233.7) — the point estimate actually leans *higher* in the
+group stage (rate ratio 1.17, binomial p = 0.69). No separate elimination effect to price.
 
-**2. "Isn't 24% just noise?"** No. The 95% sampling CI is [20.6%, 27.4%] and the full assumption
-envelope is 18.6%–27.3% — the floor of every legitimate corner is still ~1 in 5.
+**4. "The result figure assumes a goal is equally likely to fall to either team."** The model does
+split omitted-time goals 50/50; measured in the data the trailing team takes **0.548** of lead-by-one
+stoppage goals (n = 31, interval spanning 0.5). Sweeping the split 0.40–0.60 moves the *result*
+figure only **12.0%–13.9%** and leaves the *scoreline* headline untouched (it never uses the split).
 
-**3. "Does a model calibrated on 2018 transfer to Copa América and AFCON?"** This is the most
-exposed assumption and is named as such. The owed-stoppage estimator is calibrated on World Cup
-2018 only (the lone tournament with independent ground truth); the constants are then applied
-unchanged where owed time runs ~1.5–2× higher. The PRE/POST λ check and the WC2022 Opta ball-in-play
-anchor bound it, but it remains the model's headline risk (see [Limitations](#limitations--open-questions)).
+---
 
-**4. "Why no expected goals (xG)?"** Deliberate — the project avoids any xG-model dependence and
-prices everything from directly-counted goals and second-level timestamps (ADR-0002).
+## Results and sensitivity
+
+The whole result on one page:
+
+| Quantity | Value |
+|---|---|
+| **Headline — different scoreline (central)** | **24.8%** |
+| 95% bootstrap confidence interval (sampling) | **[21.7%, 28.6%]** |
+| Lead band — one modeling choice varied at a time | **21.4% – 27.3%** |
+| Full envelope — all modeling choices varied jointly | **18.9% – 28.6%** |
+| **Different *result*** — winner/draw actually changes | **13.0% [11.3%, 15.1%]** |
+| Second-half-only variant (comparison, not the headline) | 17.0% [15.0%, 19.5%] |
+
+**Two kinds of uncertainty, kept apart.** *Sampling* uncertainty is the bootstrap CI
+**[21.7%, 28.6%]** (width 6.9 pts): over 1,000 draws each goal-rate cell is redrawn from a
+Jeffreys–Gamma posterior and a shared owed-stoppage estimator error is split across the two halves.
+*Specification* uncertainty is how the headline moves as defensible modeling choices change, one at
+a time (the 21.4–27.3% band) or all jointly (the 18.9–28.6% envelope).
+
+| Modeling choice | Levels → X% | Spread |
+|---|---|---|
+| **λ source** | all-pooled **24.8** · POST-only 23.7 · regime-matched 24.9 · PRE-only 27.3 | ~3.6 pts |
+| **Gross-up** (in-stoppage wasting) | off 21.4 → **on 24.8** → geometric 26.0 | ~4.6 pts |
+| **Decay half-life** | h=2 23.3 · **h=4 24.8** · h=8 26.1 | ~2.8 pts |
+| **Conditioning** | overall **24.8** · split by tied/not-tied 24.5 | ~0.3 pts |
+| One-at-a-time band (min–max of the above) | **21.4% – 27.3%** | 5.9 pts ≈ 0.9× sampling |
+| Full joint envelope (all knobs together) | **18.9% – 28.6%** | 9.7 pts ≈ 1.4× sampling |
+
+The one-at-a-time band (5.9 pts) is about the size of the sampling CI (6.9 pts), and the joint
+envelope only modestly exceeds it — the headline does not hinge on any single knob. The PRE-only λ
+source sets the top of the band (27.3%) on a thin, wide-interval PRE sample; the central pooled rate
+is the one to read. The data-gap handling is **not** a sweepable knob: "credit none" (≈10.8%) and
+"credit all" (≈37.3%) are *known-biased bounds*, not honest uncertainty — the estimator is
+calibrated to the defensible middle and only its calibration error enters the CI (ADR-0025/0031).
+
+**Flip mechanics.** The model splits omitted-time goals 50/50 (Objection 4) and treats any match
+leading by two-plus at 90 as unflippable; 95 of 314 matches were already decided by ≥2 goals at 90.
+
+**The honest limitation.** The owed-stoppage estimator is anchored on World Cup 2018, then frozen
+and applied unchanged to the other five tournaments — a transfer that crosses the 2022 directive
+(the lone calibration tournament is PRE; the headline mostly lives POST) and a large extrapolation
+(owed time runs 17–25 min/match across the POST tournaments vs 12.7 for 2018, with Copa and AFCON
+nearly double). The model's most exposed quantity sits exactly where it can't be directly verified;
+it is validated only indirectly, through the frozen-2018 constants and the WC2022 ball-in-play
+point. Named, not buried (see [Limitations](#limitations--open-questions)).
 
 ---
 
@@ -198,25 +284,26 @@ regenerable and gitignored; regenerate figures with `make s09`.
 Two external anchors certify the model's **inputs** (neither certifies its output — see limitation 1):
 
 - **Nate Silver, World Cup 2018** (32 matches, hand-measured with a stopwatch at FiveThirtyEight).
-  Our owed-stoppage estimator tracks his "expected" (should-be-added) minutes at **r = 0.825**
-  (MAE 2.44 min); our stoppage-played clock tracks his "actual" at **r = 0.992**. His own numbers
+  Our owed-stoppage estimator tracks his "expected" (should-be-added) minutes at **r = 0.875**
+  (MAE 1.77 min); our stoppage-played clock tracks his "actual" at **r = 0.992**. His own numbers
   show **13.16 owed vs 6.98 played** — a 1.9× shortfall an outside observer found independently.
   The table is checked in at `data/raw/nate_2018/nate_wc2018.csv` (the only non-regenerable data
   in the repo).
-- **Opta, World Cup 2022 ball-in-play.** Opta publishes 58:04 of average ball-in-play per match;
-  our gap-method reconstruction gives 57:40 (24s low). This certifies the live-share denominator.
+- **Opta ball-in-play.** Opta publishes 58:04 of average ball-in-play per WC2022 match; our
+  gap-method reconstruction gives 57:40 (24s low), with the 2018 anchor at 56:00 vs Opta's 54:50.
+  This certifies the live-share denominator.
 
 The **standard of proof**: every figure traces to a script + a checkpointed table + a documented
 assumption. A stage is "done" only when its pytest acceptance gate is green. The locked headline,
-its band, and the chosen knob set live in [`docs/decisions.md`](docs/decisions.md); the
+its band, and the chosen knob set live in [`docs/decisions.md`](docs/decisions.md) (ADR-0031); the
 script-to-figure ledger is [`docs/numbers_ledger.md`](docs/numbers_ledger.md).
 
 ---
 
 ## Limitations & open questions
 
-Honest list, least-defensible first (full version in
-[`docs/model_review_v2.md`](docs/model_review_v2.md) §7):
+Honest list, least-defensible first (the model's most exposed quantity is folded into
+[Results and sensitivity](#results-and-sensitivity) above):
 
 1. **No independent counterfactual benchmark.** Every external check is on an *input*; `X%` itself
    is not falsified against any outside number.
@@ -241,7 +328,8 @@ src/lib/     shared code (clock, bip, silent-gap, stats, nate-validation harness
 src/s0*.py   pipeline stages s01–s09
 data/        raw (immutable cache) · interim · processed   (gitignored, regenerable)
              except data/raw/nate_2018/  (checked-in external ground truth)
-docs/        decisions.md (ADR log) · model_review_v2.md (canonical write-up) ·
+docs/        decisions.md (ADR log) · Methodology.md (methodology write-up) ·
+             substack_post_v*.md (public narrative, latest = current) ·
              data_dictionary.md · numbers_ledger.md · TRANSFER.md
 figures/     deterministic figures from s09 (gitignored, regenerable)
 tests/       pytest acceptance gates (one per stage)
@@ -251,9 +339,10 @@ tests/       pytest acceptance gates (one per stage)
 
 | Document | Purpose |
 |---|---|
-| [`CLAUDE.md`](CLAUDE.md) | Project contract: goal, locked decisions, conventions, per-stage gates |
-| [`docs/model_review_v2.md`](docs/model_review_v2.md) | Canonical methodological write-up (read start-to-finish, figures embedded) |
-| [`docs/decisions.md`](docs/decisions.md) | ADR log — every methodology choice, newest first; the headline lock (ADR-0025) |
+| [`CLAUDE.md`](CLAUDE.md) | Project contract: goal, locked decisions, conventions, per-stage gates, session/README-sync rule |
+| [`docs/substack_post_v3.md`](docs/substack_post_v3.md) | Latest public narrative write-up (this README mirrors its structure; always read the highest-numbered `substack_post_v*`) |
+| [`docs/Methodology.md`](docs/Methodology.md) | Methodology write-up (estimand, the three steps, assumptions) |
+| [`docs/decisions.md`](docs/decisions.md) | ADR log — every methodology choice, newest first; the headline lock (ADR-0031) |
 | [`docs/data_dictionary.md`](docs/data_dictionary.md) | Stage → table → column definitions |
 | [`docs/numbers_ledger.md`](docs/numbers_ledger.md) | Every article figure → producing table + cell (regenerated by s09) |
 
@@ -265,4 +354,4 @@ Match and event data are **StatsBomb open data** (match + event JSON only — no
 cloned), used under StatsBomb's open-data terms. Board added time (stoppage played) is curated into
 `data/raw/board/board_added_time.csv`. World Cup 2018 ground truth is Nate Silver's published
 FiveThirtyEight measurement, transcribed to `data/raw/nate_2018/nate_wc2018.csv`. The Opta
-ball-in-play figure (58:04, WC2022) is used only as a published calibration target.
+ball-in-play figures (58:04 WC2022, 54:50 WC2018) are used only as published calibration targets.

@@ -3,6 +3,12 @@
 Read `CLAUDE.md §6` first: **one self-contained unit per session, then stop.** Do not chain
 these items into one marathon session.
 
+> **Standing checkpoint rule (CLAUDE.md §7):** before ending any session that touched the model,
+> headline, bands, sensitivity, knobs, calibration, tournament set, pipeline, or the public
+> narrative, run the **README sync pass** and update `README.md` in the same session. The README
+> mirrors the structure of the latest `docs/substack_post_v*.md` and must always link to that
+> exact file. Note "README: synced" or "README: no change needed" in your checkpoint.
+
 ---
 
 ## DONE + RE-LOCKED (2026-06-25) — HEADLINE = 24.8% scoreline / 13.0% flip (ADR-0031). Method 2 + PRE celebration allowance ADOPTED.

@@ -67,7 +67,8 @@ Processed parquet + `docs/decisions.md` (ADR log). Notebooks are exploration onl
 **Work one self-contained unit per session, then stop.** Do NOT chain stages or attempt
 to "run everything to the end" in a single session. Each session: pick up the next unit
 from `next_session.md`, do only that unit, validate its gate, checkpoint (write results to
-`decisions.md` and update `next_session.md`), then end the session to save compute.
+`decisions.md`, **sync `README.md` per §7**, and update `next_session.md`), then end the
+session to save compute.
 
 **Why this is a hard rule (learned the expensive way):** a prior session burned large
 compute running s04–s09 while s01–s03 still had MAJOR structural issues — the true-stoppage
@@ -83,3 +84,30 @@ Two human checkpoints matter most: the **s03 calibration** and the **s08 sensiti
 Build order: s01 → s02 → s03 (confirm calibration yourself) → s04 → s05 → s07 (eyeball the
 PRE/POST gap, decide framing) → s06a/s06b → finalize s07 → s08 (run grid before committing
 to X%) → s09. **`next_session.md` is the authoritative pointer to the current unit of work.**
+
+## 7. README sync — part of every session's definition of done (non-negotiable)
+**`README.md` is a derivative artifact and must never drift from the locked findings.** Before
+ending ANY session that touched the model, the headline, the bands/CIs, the sensitivity grid,
+a knob default, the calibration, the tournament set, the pipeline stages/gates, or the public
+narrative, do a README consistency pass and update it in the same session. A session is not
+"done" until the README reflects that session's changes.
+
+The check (run it at checkpoint, even if you think nothing relevant changed):
+- **Headline + bands.** README's headline, both CIs (scoreline + result), assumption band, full
+  joint envelope, and the one-page results table all match the current lock in
+  `docs/decisions.md` (newest ADR) and `docs/numbers_ledger.md`. Grep the old numbers to be sure
+  none survive (e.g. `grep -nE '23\.6|12\.1|20\.6|27\.4' README.md` after a re-lock).
+- **Structure mirrors the latest write-up.** The README's narrative sections (headline, the data,
+  how it's measured, the four numbered objections, results & sensitivity) must mirror the
+  STRUCTURE of the highest-numbered `docs/substack_post_v*.md`, and the README must link to that
+  exact (latest) file. When a new `substack_post_v{N+1}.md` lands, repoint every README reference
+  from `v{N}` to `v{N+1}` and re-mirror any changed section.
+- **No broken links.** Every `docs/...md` and `figures/...png` the README references must exist
+  (artifacts get renamed/removed — verify, don't assume).
+- **Acceptance gates / stage table.** If a stage, gate, or knob changed, the pipeline table and
+  the per-stage gates in §4 / the README stay consistent.
+
+If the session genuinely changed nothing the README depends on, note "README: no change needed"
+in the checkpoint and move on. The default posture is **assume it needs a look** — the headline
+lives in two places (lock + README) and only the lock is authoritative, so the README is the one
+that silently rots.
