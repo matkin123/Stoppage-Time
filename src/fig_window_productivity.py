@@ -46,24 +46,14 @@ def main() -> None:
             f"{r['rate']:.4f}   [{r['ci_lo']:.4f}, {r['ci_hi']:.4f}]",
         ])
 
-    ratio = rates["2H_stoppage"]["rate"] / rates["regular"]["rate"]
-
-    editorial.table_figure(
-        title="The most productive minutes on the pitch are in second-half stoppage",
-        subtitle=[
-            f"Goals per live minute by match window — second-half added time scores about "
-            f"{ratio:.1f}× the",
-            "open-play floor. A “live minute” counts only time the ball is actually in play.",
-        ],
-        source=editorial.FOOTER,
+    editorial.plain_table_figure(
         columns=["Match window", "Goals (n)", "Live minutes",
                  "Goals per live minute (95% CI)"],
         cell_text=cell_text,
         col_widths=[0.34, 0.12, 0.16, 0.38],
         aligns=["left", "center", "center", "left"],
-        hilite_cells=[(0, 0), (0, 3)],
-        hilite_header_cols=[3],
-        figsize=(11.6, 4.5),
+        bold_rows=[0],
+        figsize=(11.6, 2.2),
         savepath=config.FIGURES / "t_window_productivity.png",
     )
 

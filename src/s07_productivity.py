@@ -25,12 +25,17 @@ ON_TARGET = {"Goal", "Saved", "Saved To Post"}
 
 
 def _scope_frames(df, matches):
-    """Yield (scope_label, sub_df) for pooled, each group, each tournament."""
-    t = matches.set_index("match_id")[["tournament", "group"]]
+    """Yield (scope_label, sub_df) for pooled, each group, each stage class, each tournament."""
+    t = matches.set_index("match_id")[["tournament", "group", "stage"]]
     d = df.merge(t, left_on="match_id", right_index=True, how="left")
+    d["stage_class"] = d["stage"].where(d["stage"] == "Group Stage", "Knockout")
     yield "pooled", d
     for grp, sub in d.groupby("group"):
         yield f"group:{grp}", sub
+    # group-stage vs knockout: feeds the s08 stage-source robustness row (no separate
+    # elimination effect to price; ADR-0025 robustness note). Knockout = every non-group match.
+    for sc, sub in d.groupby("stage_class"):
+        yield f"stage:{sc}", sub
     for tr, sub in d.groupby("tournament"):
         yield f"tournament:{tr}", sub
 

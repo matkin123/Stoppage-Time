@@ -95,6 +95,23 @@ def _geom_ceiling(window, ci, halflife=4.0):
     return float(p_change(mu).mean())
 
 
+def _stage_x(window, ci, lam1, obs2, floor2, halflife=4.0):
+    """Headline X% at the central spec (silent_marked|overall|hl=4|gross-up ON) with the goal RATES
+    sourced from a single stage cohort (group-stage or knockout), applied to all matches -- the stage
+    analogue of the pooled_pre/pooled_post lambda sources (ADR-0033). The per-match omitted-live
+    minutes and decay horizon are lambda-source INDEPENDENT, so they are reused from the central
+    snapshot `ci`; only the scalar cohort rates (1H lambda, observed 2H rate, open-play floor) swap
+    in. Computed AFTER the main grid so it never perturbs the locked bootstrap RNG stream (ADR-0031).
+    Point estimate only -- a reported robustness row, NOT a swept knob (excluded from the band /
+    joint envelope, like the geometric ceiling)."""
+    fl1 = ci["ls1"] * (1.0 + ci["z1"] * (1.0 - ci["ls1"]))    # gross-up ON
+    ol1 = np.maximum(0.0, ci["ts1"] - ci["pl1"]) * fl1
+    ol2 = ci["T2_grossed"] * ci["ls2"]                        # omitted-live 2H = grossed clock x live share
+    avg2 = avg_lambda(ci["T2_grossed"], halflife, obs2, floor2)
+    mu = avg2 * ol2 if window == "2H_only" else lam1 * ol1 + avg2 * ol2
+    return float(p_change(mu).mean())
+
+
 # ---- lambda estimation ---------------------------------------------------
 def genuine_stoppage_share(incident, seg):
     """z = genuine-stoppage fraction of dead time, measured in regulation (ADR-0024 gross-up
@@ -169,11 +186,16 @@ def build_lambda_cells(matches, goals, state, live_min):
     state_at_90 (2H). team_role is gone (IMPL-6): with any-extra-goal only the total rate enters.
     """
     grp = matches.set_index("match_id")["group"].to_dict()
+    stg = matches.set_index("match_id")["stage"].to_dict()
     mids = list(matches["match_id"])
     cohorts = {
         "all": mids,
         "pre": [m for m in mids if grp[m] == "PRE"],
         "post": [m for m in mids if grp[m] == "POST"],
+        # stage cohorts feed the group-stage-vs-knockout lambda-source robustness row (ADR-0033).
+        # knockout = every non-group match (Round of 16 .. Final).
+        "group": [m for m in mids if stg[m] == "Group Stage"],
+        "elim": [m for m in mids if stg[m] != "Group Stage"],
     }
     state_col = {"1H": "state_at_45", "2H": "state_at_90"}
     st = state.set_index("match_id")
@@ -223,7 +245,8 @@ def regular_lambda_cells(prod):
     urgency premium -- is what the decayed 2H rate relaxes TOWARD as the omitted window grows.
     Pulled straight from s07's productivity table (scope pooled / group:PRE / group:POST) so the
     floor lambda traces to the ledger. Registered as a drawn cell so its sampling error enters CI."""
-    scope_of = {"all": "pooled", "pre": "group:PRE", "post": "group:POST"}
+    scope_of = {"all": "pooled", "pre": "group:PRE", "post": "group:POST",
+                "group": "stage:Group Stage", "elim": "stage:Knockout"}
     out = {}
     for cohort, scope in scope_of.items():
         row = prod[(prod["scope"] == scope) & (prod["dimension"] == "phase") &
@@ -505,6 +528,31 @@ def main() -> None:
                 "flip_ci_lo": float("nan"), "flip_ci_hi": float("nan"),
                 "n_matches": int(group_masks["all"].sum()),
             })
+
+    # group-stage vs knockout lambda-source robustness rows (ADR-0033) -- REPORTED, not a swept knob.
+    # Same recipe as the geometric ceiling: deterministic point at the central spec, computed AFTER the
+    # main grid so it never perturbs the locked bootstrap RNG stream (ADR-0031). The omitted-live
+    # minutes / decay horizon are lambda-source independent (reused from central_inputs); only the
+    # cohort goal RATES swap in. Excluded from the one-at-a-time band / joint envelope (which restrict
+    # to the four pooled/regime sources), so this row reports a span without re-centering the headline.
+    if central_inputs:
+        def _scalar(ck):
+            c, e = cells[ck]
+            return c / e if e > 0 else float("nan")
+        for src, coh in (("pooled_group", "group"), ("pooled_elim", "elim")):
+            lam1_s = _scalar((coh, "1H", "overall", "all"))
+            obs2_s = _scalar((coh, "2H", "overall", "all"))
+            floor_s = _scalar(("__regular__", coh))
+            for w in mu:
+                summary_rows.append({
+                    "window": w, "group": "all",
+                    "knob_set": f"silent_marked|overall|{src}|hl=4.0|on",
+                    "pct_changed": _stage_x(w, central_inputs, lam1_s, obs2_s, floor_s),
+                    "pct_outcome_flip": float("nan"),
+                    "ci_lo": float("nan"), "ci_hi": float("nan"),
+                    "flip_ci_lo": float("nan"), "flip_ci_hi": float("nan"),
+                    "n_matches": int(group_masks["all"].sum()),
+                })
 
     summary = pd.DataFrame(summary_rows)
     per_match = pd.DataFrame(per_match_rows)

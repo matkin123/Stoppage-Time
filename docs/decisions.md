@@ -5,6 +5,46 @@ number and its band must be locked here (with the chosen knob_set) before publis
 
 ---
 
+## ADR-0033 — Group-stage vs knockout as a lambda-source robustness ROW (headline X% recomputed per stage) — LOCK UNCHANGED (2026-06-29)
+
+**Publication-prep session, not a re-lock.** Triggered by a request to report the knockout-vs-group
+robustness *all the way through the model* (not just the raw rate split in Objection 3). Objection 3
+already shows the raw 2H-stoppage rate leans slightly HIGHER in the group stage (0.0847 vs 0.0727,
+rate ratio 1.17, p=0.69 — no separate elimination effect). This ADR carries that through the
+counterfactual: recompute the headline X% sourcing EVERY match's goal rates from a single stage
+cohort, the **stage analogue of the pooled_pre / pooled_post lambda sources**.
+
+**Method (additive, deterministic).** s07 `_scope_frames` gains `stage:{Group Stage,Knockout}`
+scopes (knockout = every non-group match), so the open-play floor traces to the productivity ledger
+the same way PRE/POST do; existing rows are byte-identical (636 rows, gate green). s08
+`build_lambda_cells` gains `group`/`elim` cohorts and `regular_lambda_cells` maps them to the new
+s07 scopes. The two stage X% are computed by a new `_stage_x()` helper **after the main grid loop**,
+reusing the central spec's per-match omitted-live minutes + decay horizon (both lambda-source
+independent) and swapping only the scalar cohort rates (1H lambda, observed 2H rate, open-play
+floor). Because it draws ZERO RNG, the locked bootstrap stream is untouched — the central 24.8%
+[21.7%, 28.6%] / flip 13.0% [11.3%, 15.1%] / 2H_only 17.0% reproduce byte-identical.
+
+**Result (central spec, gross-up ON, h=4, silent_marked|overall):**
+
+- 1H+2H: group-stage λ **25.9%** .. all-matches **24.8%** (CENTRAL) .. knockout λ **21.5%** (span 4.4 pts).
+- 2H_only: group 17.3% .. all 17.0% .. knockout 16.1%.
+
+Both stage variants sit INSIDE the joint envelope (18.9%–28.6%). Consistent with Objection 3, the
+group-stage source is the *higher* of the two.
+
+**DECISION — REPORTED row, EXCLUDED from the band/envelope; lock UNCHANGED.** Like the geometric
+ceiling, `pooled_group`/`pooled_elim` are a reported robustness row, NOT swept knobs: the
+one-at-a-time band (21.4%–27.3%) and joint envelope (18.9%–28.6%) restrict to the four
+pooled/regime sources, so the stage rows never re-centre the headline. Added as the
+**knockout-vs-group** row in the sensitivity table (`fig_sensitivity_grid`, reordered to the
+article's knob order: decay · score@90 · knockout-vs-group · PRE-vs-POST · gross-up · band ·
+envelope) and a stage-source section in `docs/numbers_ledger.md`. All three Substack tables
+(`t_window_productivity`, `t_headline_results`, `t_sensitivity_grid`) re-rendered as bare
+black-and-white PNGs for the post. Exhibits: `figures/t_sensitivity_grid.png`,
+`docs/numbers_ledger.md` (Stage-source robustness).
+
+---
+
 ## ADR-0032 — Outcome-flip 50/50 team-split is empirically validated and non-load-bearing — LOCK UNCHANGED (2026-06-25)
 
 **Analysis session, not a build or a lock.** Triggered by a user/consultant interrogation of the one

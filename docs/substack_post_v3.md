@@ -1,6 +1,6 @@
 # The Stoppage Time That Never Gets Played
 
-*A fully reproducible measurement across the last six major international tournaments (314 matches). Owed stoppage vs. stoppage actually played — and what the missing minutes would have changed.*
+*An estimate of what would happen if stoppage time were actually measured correctly. Primarily a methodology piece, with some reflections at the end.*
 
 ---
 
@@ -12,7 +12,7 @@ Over the last six major international tournaments, if stoppage time were awarded
 
 The motivation for this model comes from two insights about football matches:
 
-**1. Stoppage time is systematically under-awarded.** During the 2018 World Cup, Nate Silver showed that referees under-award stoppage time in 97% of matches, by an average of 8 mins. Building on Nate's work, I pulled the data for every match in the last 6 major international tournaments (World Cup '18 & '22, Euros '20 & '24, Copa '24, AFCON '23).
+**1. Stoppage time is systematically under-awarded.** During the 2018 World Cup, Nate Silver hand-measured every match in the group stage and found that referees under-award stoppage time in 97% of matches, by an average of 6 mins. I pulled the stoppage time data for all 314 matches across six major international tournaments since. The direction and magnitude of error is striking; 96% of matches ended too early, by an average of 8 minutes.
 
 ![](../figures/requested/agg_01_scatter_estimate_vs_played.png)
 
@@ -47,13 +47,13 @@ I calibrate the estimator against the one independent ground truth that exists: 
 
 Stoppage *played* is the easy half — whistle-to-whistle added time, read straight off the event clock — and my played clock matches his almost exactly (r = 0.992). That near-exact match is what makes the owed estimate believable: Nate, with a stopwatch and no access to this pipeline, found the same shortfall (r = 0.875, average error 1.77 minutes). Across the 314 matches, owed stoppage averages about 17.6 minutes a match and played stoppage about 8.9, leaving roughly 8.8 omitted minutes, positive in 97% of matches.
 
-**Changes to the stoppage time rules in 2022:** FIFA directed referees to add all time-wasting. The biggest change was to add *all* of a goal celebration to stoppage, rather than the perceived "excess" of one.[^1]
+**Important Context - Changes to the stoppage time rules in 2022:** FIFA directed referees to count stoppages more honestly. The biggest change was to add *all* of a goal celebration to stoppage, rather than the perceived "excess" of one.[^1]
 
 **Step 2 — Reconstruct the live football, and check it against outside numbers.** Dead time is the gap between two timestamps: a pass goes out of play, a throw-in is received, and the seconds in between are dead. Summed across a match, those gaps give *ball-in-play*. I validate it against the best external anchors there are. For the 2022 World Cup my reconstruction reads 57:40 against Opta's 58:04 (−24s); for 2018, 56:00 against Opta's 54:50 (+70s), with FiveThirtyEight's 55:18 in between. (Opta, now Stats Perform, publishes the industry-standard ball-in-play figures.)
 
 Some gaps have no restart to explain them: the ball goes out of play, then a pass arrives, with no throw-in logged in between. The matches are coded by hand off the broadcast feed, so silent gaps open for all sorts of reasons: the camera cuts away from the pitch, the human coder takes a bite of a sandwich, who knows. I set one global threshold for how long such a gap must run before the ball counts as dead. Sweeping it from 12 to 30 seconds is the ±1 minute of per-match uncertainty I carry, rather than a false-precision point. The headline moves by less than 0.1 percentage points across that whole range, because the live-football level enters the final number twice — once in the scoring rate, once in the exposure — and the two largely cancel.
 
-**Step 3 — Price the missing minutes.** Each omitted live minute is assigned a goal rate. Expected extra goals is rate times minutes, and the chance of at least one extra goal follows from the Poisson formula. Start with the simplest version:
+**Step 3 — Calcualte the probability of a goal in the missing minutes.** Each omitted live minute is assigned a goal rate. Expected extra goals is rate times minutes, and the chance of at least one extra goal follows from the Poisson formula. Start with the simplest version:
 
 ```
 μ  =  (goal rate) × (omitted live minutes)
@@ -104,25 +104,23 @@ So the rate decays. No omitted second-half minute is priced at the raw peak. Eac
 
 The whole decay band runs from 23.3% (fastest decay) to 26.1% (slowest), under three points around the 24.8% headline.
 
-**What happened when stoppage time actually increased substantially overnight, and what it means for the assumption of decay.** When the directive roughly doubled added time, the per-minute scoring rate in those minutes barely moved: PRE second-half stoppage ran 0.086 (24 goals / 279 live-minutes), POST 0.080 (49 goals / 615 live-minutes), with more than twice the live stoppage minutes. If the extra minutes were mostly teams running out a decided game, the rate would have cratered. It held. That is the tell that stoppage time is not just ordinary football with the clock still running. Being in it is psychologically different, and the urgency it manufactures would not exist in a stopped-clock version of the same match. So the truth sits nearer the top of the model's band than the bottom.
+**Important Context - What happened when stoppage time actually increased substantially overnight, and what it means for the assumption of decay.** When the 2022 directive roughly doubled added time, the per-minute scoring rate in those minutes barely moved: PRE second-half stoppage ran 0.086 (24 goals / 279 live-minutes), POST 0.080 (49 goals / 615 live-minutes), with more than twice the live stoppage minutes. This indicates that stoppage time is not just ordinary football with the clock still running. Being in it is psychologically different, and the urgency it manufactures would not exist in a stopped-clock version of the same match. So the model's estimate is probably conservative.
 
-Now the confound, honestly. Part of why post-directive productivity stayed high is composition, not psychology. In POST matches fewer minutes were live by the 90th, because regulation wasting rose once teams learned time gets topped up later, so more of each match slid into stoppage. And the later minutes of a foreshortened live set are the most productive minutes there are. Some of the stoppage premium is therefore just "these are late minutes of a shortened game," which is exactly the endogeneity the decay and the open-play floor already discount. The honest reading: the premium is partly real urgency and partly selection, the model prices both down toward open play, and the answer barely moves either way.
+There is a big confounding variable, though. In POST matches, fewer minutes were live by the 90th, because regulation time-wasting rose once teams learned that time would get topped up later. As a result, more of each match slid into stoppage. Some of the stoppage premium is therefore just “these are late minutes of a shortened game.” The honest reading: the stoppage time premium is partly real urgency and partly selection; the model prices both down toward open play, and the answer barely moves either way.
 
-**Objection 2: The high rate is just trailing teams chasing a level scoreline.**
+**Objection 2: The high rate is just trailing teams chasing a level scoreline.** When a side trails late it throws bodies forward, so maybe the premium is only desperate, level matches. 
 
-When a side trails late it throws bodies forward, so maybe the premium is only desperate, level matches. If so, it would collapse when the game is not close. It doesn't. Second-half stoppage scores at about the same rate whether the game is level at 90 (0.0886) or not (0.0786), with heavily overlapping intervals. Conditioning the entire model on score state at 90 barely moves the headline, from 24.8% to 24.5%.
+Second-half stoppage scores at about the same rate whether the game is level at 90 (0.0886 [0.0567, 0.1318]) or not (0.0786 [0.0581, 0.1039]), with heavily overlapping intervals. Conditioning the entire model on score state at 90 barely moves the headline, from 24.8% to 24.5%.
 
-**Objection 3: The high rate is a knockout-stage effect.**
+**Objection 3: The high rate is a knockout-stage effect.** Maybe the late rate is inflated by win-or-go-home stakes. 
 
-Maybe the late rate is inflated by win-or-go-home stakes. It isn't. Split the same window by match type: group stage 0.0847 (56 goals / 660.8 live-minutes) against elimination 0.0727 (17 goals / 233.7 live-minutes), the point estimate actually leaning *higher* in the group stage (rate ratio 1.17, binomial p = 0.69). There is no separate elimination effect to price.
+Split the same window by match type: group stage 0.0847 (56 goals / 660.8 live-minutes) against elimination 0.0727 (17 goals / 233.7 live-minutes), the point estimate actually leans *higher* in the group stage (rate ratio 1.17, binomial p = 0.69). There is no separate elimination effect to price into the model. Carried all the way through: source every match's rate from the group stage alone and the headline lands at 25.9%; from the knockouts alone, 21.5% — both inside the envelope, with the all-matches central at 24.8% (the sensitivity table shows this as the knockout-vs-group row).
 
-**Objection 4: The result figure assumes a goal is equally likely to fall to either team.**
+**Objection 4: The result figure assumes a goal is equally likely to fall to either team.** When a team leads by one at 90, the result flips only if the trailing side scores, and the chasing team scores more often than the leader, so a flat 50/50 split should understate flips. 
 
-When a team leads by one at 90, the result flips only if the trailing side scores, and the chasing team scores more often than the leader, so a flat 50/50 split should understate flips. The model does split omitted-time goals 50/50. Measured in the data, the trailing team takes 0.548 of the goals scored in lead-by-one stoppage situations (n = 31, interval spanning 0.5). Sweeping that split across the whole plausible range, 0.40 to 0.60, moves the result figure only between 12.0% and 13.9%, and leaves the scoreline headline untouched, because the scoreline asks for any extra goal by either side and never uses the split.
+The model does split omitted-time goals 50/50. Measured in the data, the trailing team takes 0.548 of the goals scored in lead-by-one stoppage situations (n = 31, 95% CI [0.375, 0.713]). Sweeping that split across the whole plausible range, 0.40 to 0.60, moves the result figure only between 12.0% and 13.9%, and leaves the scoreline headline untouched, because the scoreline asks for any extra goal by either side and never uses the split.
 
 ## Results and sensitivity
-
-The whole result on one page.
 
 | Quantity | Value |
 |---|---|
@@ -137,30 +135,39 @@ Two kinds of uncertainty, kept apart. *Sampling* uncertainty is the bootstrap CI
 
 | Modeling choice | Levels → X% | Spread |
 |---|---|---|
-| **λ source** | all-pooled **24.8** · POST-only 23.7 · regime-matched 24.9 · PRE-only 27.3 | ~3.6 pts |
-| **Gross-up** (in-stoppage wasting) | off 21.4 → **on 24.8** → geometric 26.0 | ~4.6 pts |
 | **Decay half-life** | h=2 23.3 · **h=4 24.8** · h=8 26.1 | ~2.8 pts |
-| **Conditioning** | overall **24.8** · split by tied/not-tied 24.5 | ~0.3 pts |
+| **Score at 90** (conditioning) | overall **24.8** · split by tied/not-tied 24.5 | ~0.3 pts |
+| **Knockout vs group stage** | all matches **24.8** · group stage 25.9 · knockout 21.5 | ~4.4 pts |
+| **λ source** (PRE vs POST) | all-pooled **24.8** · POST-only 23.7 · regime-matched 24.9 · PRE-only 27.3 | ~3.5 pts |
+| **Gross-up** (in-stoppage wasting) | off 21.4 → **on 24.8** → geometric 26.0 | ~4.6 pts |
 | One-at-a-time band | **21.4% – 27.3%** | 5.9 pts ≈ 0.9× sampling |
 | Full **joint** envelope | **18.9% – 28.6%** | 9.7 pts ≈ 1.4× sampling |
 
-The one-at-a-time band (5.9 pts) is about the size of the sampling CI (6.9 pts), and the joint envelope (9.7 pts) only modestly exceeds it. The headline does not hinge on any single knob. The PRE-only λ source sets the top of the band at 27.3%, on a thin, wide-interval PRE sample; the central pooled rate is the one to read.
+The one-at-a-time band (5.9 pts) is about the size of the sampling CI (6.9 pts), and the joint envelope (9.7 pts) only modestly exceeds it. The headline does not hinge on any single knob. The PRE-only λ source sets the top of the band at 27.3%, on a thin, wide-interval PRE sample; the central pooled rate is the one to read. Sourcing every match's rate from one stage moves the headline modestly either way — 25.9% from the group stage, 21.5% from the knockouts — and both stay inside the envelope.
 
 Flip mechanics: the model splits omitted-time goals 50/50 between the two teams (Objection 4) and treats any match leading by two or more at 90 as unflippable. 95 of the 314 matches were already decided by two or more goals at 90, so they cannot flip at all.
 
-**The honest limitation.** The owed-stoppage estimator is anchored on World Cup 2018, then frozen and applied unchanged to the other five tournaments. That transfer crosses the 2022 directive: the one calibration tournament sits on the PRE side, while the headline mostly lives on the POST side, where referees were explicitly told to behave differently. And the extrapolation is large. Owed time runs 17 to 25 minutes a match across the POST tournaments against 12.7 for 2018, with Copa América and AFCON nearly double the calibration level. The model's most exposed quantity is exactly where it can't be directly verified. It is validated only indirectly, through the frozen-2018 constants and the 2022 ball-in-play point. I would rather name that than bury it.
+## Limitations
 
-## What the missing minutes cost, and why it's live right now
+To state the obvious, this is a counterfactual model. While the assumptions are grounded in the best available evidence, the output is unfalsifiable. I don't have external data to test against, because no one has ever played the stoppage time that did not get played.
 
-We are in the middle of a World Cup, which makes this less a measurement exercise than a running indictment, because the errors do not stay local. A match is the unit, but a tournament is a bracket, and brackets compound.
+The calibration that anchors the entire model — the owed-stoppage estimator in Step 1 — is fit on World Cup 2018 only. That's the lone tournament where an independent observer measured the truth by hand, so it's the only place I can check my work against something outside my own pipeline. The residual term this calibration produces is then frozen and applied unchanged to the other five tournaments. This application crosses the 2022 stoppage time policy change, when owed stoppage time jumped from 12.7 minutes (2018 World Cup) to roughly 19 minutes. While the model mechanics for estimating owed stoppage time update to reflect the policy change (e.g., by capturing the full time spent on celebrating goals, rather than the excess), the estimate cannot be validated externally.
 
-Start in the group stage, where the margins are thinnest. Teams advance on goal difference and goals scored, often separated by a single goal across three matches. The number that bites here is the scoreline figure, not the result figure. 24.8% of matches would have finished with a different score under correctly-added time, and a changed score is exactly what moves goal difference. A team can go out on a tiebreaker built from minutes that were never played. Then it stacks. Lay a one-in-eight chance of a flipped *result* end to end across a seven-game run to the final and, under a simple independence assumption, it is better than even odds that at least one result along the path would have broken differently. The team that lifts the trophy is probably the team that should be there. The bracket that delivered it is not obviously the bracket the rules would have produced.
+P.S. If someone wants to grab a stopwatch and hand-measure dozens of post policy change matches, let me know.
 
-It is fair to ask whether the current fix is working. FIFA keeps changing the regime. The 2022 directive told referees to add time more fully, and the boards rose without closing the gap. For 2026, Pierluigi Collina, who chairs the referees committee and drove the 2022 change, shifted emphasis again, adding throw-in and goal-kick countdown clocks. Early signs are cautiously positive: less overt time-wasting, ball-in-play roughly stable. *[VERIFY: 2026 in-tournament figures are external to my six-tournament dataset; confirm "less wasting, stable ball-in-play" against live data before publishing.]* But a countdown clock on the stadium screen changes what stoppage time looks like more than what it adds up to. The boards are visible. The minutes that never get played are not.
+## Reflections
 
-And here is the part no measurement settles: most fans don't want these minutes anyway. During Qatar, my friends were not annoyed that stoppage time was being wasted, or that a stoppage *inside* stoppage time almost never gets added back. They were annoyed by the added time itself, by being made to sit through eight extra minutes when they wanted the game to end. The reform gave them more of the thing they disliked, while the quieter theft, the live football removed from the game, went unremarked.
+**Significance to the 2026 World Cup.** We are in the middle of the tournament, which makes this as much a measurement exercise as a live indictment of the referee. Some thoughts:
 
-So let me put it in the plainest terms. An extra five minutes sounds like nothing. But at the rate teams actually score in second-half stoppage (0.0816 goals per live minute), five minutes is worth about four-tenths of a goal a match, and even at the ordinary open-play floor (0.0427) it is about a fifth. Goals are rare and lumpy, and a fifth of a goal is not small when it is spread across a knockout bracket where one goal is the whole tournament. High-variance events decide these competitions, and the minutes most likely to produce them are precisely the minutes most reliably left off the clock. To anyone who shrugs that it is only five minutes: that is the point you are missing.
+The errors that arise from under-awarded stoppage time compound over the course of a tournament. How many group stage matches would've been decided differently? And therefore how much of the elimination draw was "wrong"? And how many of the elimination matches themselves would have ended differently? By the time we reach the final, we have two teams standing on a stack of errors. In many cases, the team that lifts the trophy is correct. However, the bracket that delivers the result is certainly not the bracket that the rules should have produced.
+
+The new tournament structure means that more teams than ever before will advance (or not) on goal difference, which amplifies the consequences of failing to award stoppage time. Look at the [Group Stage third-place rankings](https://www.bbc.co.uk/sport/football/world-cup/table), which decide who progresses into the elimination round, and remember that 1 in 4 scorelines change when stoppage time is awarded correctly….
+
+**Is the current fix working?** Remember all that stoppage time in Qatar? As noted earlier, it happened because FIFA's head referee, Pierluigi Collina, relseased a directive that instructed referees to add time more fully. The problem was: its main effect was to produce more time-wasting. (We know this because the amount of time the ball was in play nudged up by about 1.3 mins, which was just a fraction of the 3.2 mins added to the average match.) So, Collina reversed course for 2026, implementing (informal) countdowns for throw-in and goal-kicks, among other measures. Early signs are cautiously positive (less overt time wasting, more ball in play), but I do not have access to the data to make an informed judgement.
+
+**What do the people want?** This is the part no amount of measurement settles: from my anecdotal experience, many fans don't want these minutes anyway. During Qatar, some of my friends were not annoyed that more of the clock was being wasted, or that a stoppage inside stoppage time almost never gets added back in full…they were annoyed by the extent of the added time itself. (This is a version of "the game is gone" critique, where "the game" is some notional 1 to 3 minutes that are tacked onto each half, no matter how much time is actually wasted.)
+
+So let me put it in the plainest terms. An extra five minutes sounds like nothing. But at the rate teams actually score in second half stoppage (0.082 goals per live minute), five minutes is worth about four-tenths of a goal, and even at the ordinary open play rate (0.043), it is worth about one fifth. High-variance events (i.e., goals) decide football matches, and change the course of tournaments. The minutes most likely to produce goals are precisely the minutes most reliably left off the clock. To anyone who shrugs that it is only a few minutes: this is the point you are missing.
 
 [^1]: I update my stoppage-time estimate for post-directive tournaments to count all goal-celebration stoppage, rather than 25%, which I calibrated to Nate.
 

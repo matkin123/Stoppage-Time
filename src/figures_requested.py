@@ -366,11 +366,11 @@ def _bar_buckets_pub(prod):
 
         _titleblock(
             fig,
-            "Goals arrive fastest in stoppage time",
-            "Goals per live minute by stage of the match. Scoring climbs through each half "
-            "and spikes in added time (red). A “live minute” counts only time the ball is "
-            "actually in play.",
-            FOOTER, subtitle_width_in=6.2)
+            "Goal scoring increases dramatically in stoppage time",
+            ["Goals per live minute by stage of the match. Scoring climbs through each "
+             "half and spikes in added time (red).",
+             "A “live minute” counts only the time the ball is actually in play."],
+            FOOTER)
     _save(fig, "agg_02_productivity_by_bucket.png")
 
 
@@ -435,12 +435,15 @@ def _scatter_estimate_pub(sc):
             ax.spines[sp].set_visible(False)
         ax.tick_params(length=0, labelsize=9.5)
 
+        source = (FOOTER.split("\n")[0] +
+                  "\nSource: StatsBomb open data; author’s analysis, calibrated to "
+                  "Nate Silver at r = 0.88, MAE = 1.77 mins")
         _titleblock(
             fig,
             "Matches play about half the stoppage time they’re owed",
             [f"Each red dot is one of {n} matches. {pct_above:.0%} of matches ended too early,",
              "with more stoppage owed than was actually played."],
-            FOOTER, left_in=1.7)
+            source, left_in=1.7)
     _save(fig, "agg_01_scatter_estimate_vs_played.png")
 
 

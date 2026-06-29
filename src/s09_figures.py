@@ -160,9 +160,9 @@ def fig_productivity_decay():
 
     Editorial redesign: the central 4-min half-life is the SUBJECT (red); the 2- and 8-min
     bounds are neutral context. Reference lines (observed stoppage rate, open-play floor) are
-    named in white space, not a legend. The x-axis is held to the realistic added-minute window
-    (curves are flat at the floor well before the longest omitted clock), so the three half-life
-    curves stay visibly separated where they are direct-labelled."""
+    named in white space. The three half-life curves are keyed in a small legend parked in the
+    top-right white space, just below the stoppage-time scoring-rate line, where the curves have
+    decayed toward the floor and left the corner clear."""
     import numpy as np
 
     path = config.PROCESSED / "decay_profile.parquet"
@@ -173,13 +173,15 @@ def fig_productivity_decay():
     floor = float(df["floor_rate"].iloc[0])
     R = obs - floor
 
-    tmax = 12.0  # realistic added-minute window; curves are flat at the floor beyond this
+    tmax = 30.0  # full decay window: by 30 unplayed minutes every curve has cooled to the floor
 
-    # (half-life, colour, lineweight, label, label dy in points) — central is the highlight.
-    # Slow nudged up / fast nudged down so the right-edge labels never touch.
-    curves = [(2.0, editorial.NEUTRAL, 1.6, "Fades fast (2 min)", -11),
-              (4.0, editorial.HILITE, 2.6, "Central: 4-min half-life", 0),
-              (8.0, editorial.SLATE, 1.6, "Fades slow (8 min)", 11)]
+    # (half-life, colour, lineweight, linestyle, label) — central is the red highlight (solid);
+    # the two neutral bounds share the same grey, distinguished by pattern (fades fast dotted,
+    # fades slow dashed). All three are keyed in a boxed legend rather than on the curves.
+    grey = "#92969B"  # editorial.NEUTRAL (#B7BCC2) darkened ~20% for the two neutral bounds
+    curves = [(2.0, grey, 1.6, ":", "Fades fast (2 min)"),
+              (4.0, editorial.HILITE, 2.6, "-", "Central: 4-min half-life"),
+              (8.0, grey, 1.6, "--", "Fades slow (8 min)")]
 
     with plt.rc_context(editorial.RC):
         fig = plt.figure(figsize=(9.8, 6.6))
@@ -187,42 +189,56 @@ def fig_productivity_decay():
         content_top = editorial.titleblock(
             fig,
             "The model assumes that stoppage time scoring decays in omitted minutes",
-            "Goals arrive fastest the moment stoppage time begins, then the rate cools back "
-            "toward regular play the longer the unplayed stretch runs. The model’s central "
-            "choice is a 4-minute half-life, bracketed by a faster and a slower alternative.",
+            "If we add more time, teams won’t keep scoring at the same rate. The model’s "
+            "central choice is a 4-minute half-life, bracketed by a faster and slower "
+            "alternative.",
             "Built from second-half stoppage scoring across all 314 matches, 2018–2024. "
             "Central spec: 4-minute half-life.\nSource: StatsBomb open data; author’s analysis.",
             content_gap_in=0.42)
         ax_bottom = 0.155
         ax_top = content_top - 0.30 / H  # leave room for the axes (sub)title
-        ax = fig.add_axes([0.085, ax_bottom, 0.66, ax_top - ax_bottom])
+        ax = fig.add_axes([0.08, ax_bottom, 0.885, ax_top - ax_bottom])
         ylim = (floor - R * 0.18, obs + R * 0.24)
 
         # per-marginal-minute lambda(t) = floor + (obs-floor)*0.5**(t/h)
-        t = np.linspace(0.0, tmax, 240)
-        for h, c, lw, lab, dy in curves:
+        t = np.linspace(0.0, tmax, 300)
+        handles = []
+        for h, c, lw, ls, lab in curves:
             y = floor + R * 0.5 ** (t / h)
-            ax.plot(t, y, color=c, lw=lw, zorder=3)
-            ax.annotate(lab, (t[-1], y[-1]), textcoords="offset points", xytext=(8, dy),
-                        va="center", fontsize=8.5, color=c,
-                        fontweight="bold" if h == 4.0 else "normal")
+            line, = ax.plot(t, y, color=c, lw=lw, ls=ls, label=lab, zorder=3)
+            handles.append(line)
 
-        # reference lines, named in clear white space at x=10 (both labels left-aligned
-        # to the same start: observed sits above its dashed line, regular below its dotted line)
-        ax.axhline(obs, ls="--", color="#3C4043", lw=1.1, zorder=2)
-        ax.axhline(floor, ls=":", color=editorial.REF, lw=1.2, zorder=2)
-        ax.annotate("Observed stoppage-time rate", (8.4, obs), textcoords="offset points",
+        # Legend keyed in the top-right white space, parked just below the stoppage-time
+        # scoring-rate line. Sits in a solid-white, dark-grey-bordered box (opaque, drawn above
+        # the gridlines). Each label is coloured to its curve; the central spec is bold.
+        leg_order = list(reversed(curves))  # legend reads top→bottom: slow, central, fast
+        leg = ax.legend(handles=list(reversed(handles)), loc="upper right",
+                        bbox_to_anchor=(0.985, 0.77), frameon=True, fancybox=False,
+                        facecolor="white", edgecolor="#3C4043", framealpha=1.0,
+                        handlelength=2.6, handletextpad=0.7, labelspacing=0.6, fontsize=8.5,
+                        borderaxespad=0.0)
+        leg.set_zorder(6)
+        leg.get_frame().set_linewidth(0.9)
+        for txt, (h, _c, _lw, _ls, _lab) in zip(leg.get_texts(), leg_order):
+            txt.set_color(_c)
+            txt.set_fontweight("bold" if h == 4.0 else "normal")
+
+        # reference lines, named in clear white space, both left-aligned to minute 1 — drawn
+        # SOLID as the two "walls" that bound the estimates (stoppage rate above, open play below)
+        ax.axhline(obs, ls="-", color="#3C4043", lw=1.1, zorder=2)
+        ax.axhline(floor, ls="-", color="#3C4043", lw=1.2, zorder=2)
+        ax.annotate("Stoppage time scoring rate", (1, obs), textcoords="offset points",
                     xytext=(0, 3), ha="left", va="bottom", fontsize=8.5, style="italic",
                     color="#3C4043")
-        ax.annotate("Regular open-play rate", (8.4, floor), textcoords="offset points",
+        ax.annotate("Open play scoring rate", (1, floor), textcoords="offset points",
                     xytext=(0, -3), ha="left", va="top", fontsize=8.5, style="italic",
-                    color=editorial.REF)
+                    color="#3C4043")
 
         ax.set_xlabel("Minutes into the unplayed stoppage time", fontsize=10.5)
         ax.set_ylabel("Goals per live minute", fontsize=10.5)
         ax.set_title("Decayed goal-scoring rate for each hypothetical added minute",
                      fontsize=11.5, color=editorial.INK, pad=8, loc="left")
-        ax.set_xlim(0, tmax * 1.34)
+        ax.set_xlim(0, tmax)
         ax.set_ylim(*ylim)
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.02f}"))
         ax.grid(color=editorial.GRID, lw=0.7, zorder=0)
@@ -265,9 +281,12 @@ def write_ledger(prod):
         # known-wrong bounds kept ONLY as internal monotonicity guardrails in the grid; they are
         # NEVER reported as a range. The reported assumption range is over the LEGITIMATE knobs
         # (conditioning x source x decay-half-life x gross-up) with silent FIXED at silent_marked;
-        # regression-only hl endpoints (inf/0.0) and the geometric ceiling row are excluded.
+        # regression-only hl endpoints (inf/0.0), the geometric ceiling row, and the stage-source
+        # rows (pooled_group/pooled_elim, ADR-0033) are excluded -- the last are a separate
+        # robustness row that must not re-centre the reported band/envelope.
+        band_sources = ["pooled_all", "pooled_post", "pooled_pre", "regime_matched"]
         reported = s[(s["group"] == "all") & (s["window"] == hw) &
-                     (s["silent"] == "silent_marked") &
+                     (s["silent"] == "silent_marked") & (s["source"].isin(band_sources)) &
                      (s["gw"].isin(["off", "on"])) & (~s["hl"].isin(["hl=inf", "hl=0.0"]))].copy()
         allg = reported
         joint_lo, joint_hi = allg["pct_changed"].min(), allg["pct_changed"].max()
@@ -365,6 +384,22 @@ def write_ledger(prod):
                 gtxt = f" -> geometric ceiling {geom['pct_changed']:.1%}" if geom is not None else ""
                 lines.append(f"- {win}: gross-up off {off['pct_changed']:.1%} -> on(CENTRAL) "
                              f"{on['pct_changed']:.1%}{gtxt}")
+        lines += [
+            "",
+            "## Stage-source robustness: group stage vs knockout (ADR-0033)",
+            "- recompute the headline X% sourcing EVERY match's goal rates from a single stage cohort "
+            "(group-stage-only / knockout-only lambda), the stage analogue of pooled_pre/pooled_post. "
+            "Per-match omitted-live minutes + decay horizon are lambda-source independent (reused from "
+            "the central spec); only the cohort rates swap in. Point estimate only -- a REPORTED "
+            "robustness row, EXCLUDED from the band/envelope (like the geometric ceiling).",
+        ]
+        for win in (hw, "2H_only"):
+            grp = row(f"silent_marked|overall|pooled_group|hl=4.0|on", win)
+            elim = row(f"silent_marked|overall|pooled_elim|hl=4.0|on", win)
+            allm = row(central, win)
+            if grp is not None and elim is not None and allm is not None:
+                lines.append(f"- {win}: group stage {grp['pct_changed']:.1%} .. all matches "
+                             f"{allm['pct_changed']:.1%} (CENTRAL) .. knockout {elim['pct_changed']:.1%}")
         lines += [
             "",
             "## Outcome-flip secondary metric (ADR-0021 #1; stricter 'different OUTCOME')",

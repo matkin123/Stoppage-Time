@@ -19,6 +19,11 @@ from src.lib import config, editorial
 
 CENTRAL = "silent_marked|overall|pooled_all|hl=4.0|on"
 
+# Sources that constitute the reported band/envelope; the stage cohorts (pooled_group /
+# pooled_elim, ADR-0033) are a separate robustness row and are excluded here, like the
+# geometric ceiling, so they never re-centre the headline band.
+BAND_SOURCES = ["pooled_all", "pooled_post", "pooled_pre", "regime_matched"]
+
 
 def _load():
     s = pd.read_parquet(config.PROCESSED / "counterfactual_summary.parquet")
@@ -36,6 +41,7 @@ def _load():
     # ADR-0025 reported set: silent fixed at silent_marked, gross-up in {off,on}, drop the
     # regression-only half-life endpoints. Joint envelope = min/max over it.
     rep = s[(s["group"] == "all") & (s["window"] == hw) & (s["silent"] == "silent_marked") &
+            (s["source"].isin(BAND_SOURCES)) &
             (s["gw"].isin(["off", "on"])) & (~s["hl"].isin(["hl=inf", "hl=0.0"]))]
     joint_lo, joint_hi = rep["pct_changed"].min(), rep["pct_changed"].max()
     # one-factor-at-a-time lead band: sweep each knob holding the other three central.
@@ -70,21 +76,13 @@ def main() -> None:
          f"{pct(c2['pct_changed'])}   [{c2['ci_lo']:.1%}, {c2['ci_hi']:.1%}]"],
     ]
 
-    editorial.table_figure(
-        title="About one match in four would have ended with a different scoreline",
-        subtitle=[
-            "If stoppage time were measured and awarded per the rulebook. The scoreline figure —",
-            "at least one extra goal by either side — is the headline; the stricter result figure,",
-            "where the winner or a draw actually changes, is always reported separately.",
-        ],
-        source=editorial.FOOTER,
+    editorial.plain_table_figure(
         columns=["What changes", "Share of matches"],
         cell_text=cell_text,
         col_widths=[0.66, 0.34],
         aligns=["left", "left"],
-        hilite_cells=[(0, 0), (0, 1)],
-        bold_cells=[(4, 0), (4, 1)],
-        figsize=(11.4, 5.4),
+        bold_rows=[0, 4],
+        figsize=(11.4, 2.9),
         savepath=config.FIGURES / "t_headline_results.png",
     )
 

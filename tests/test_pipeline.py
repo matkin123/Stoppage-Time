@@ -96,9 +96,11 @@ def test_s08_silent_knob_brackets_headline():
     parts = allg["knob_set"].str.split("|", expand=True)
     allg["silent"], allg["cond"], allg["source"] = parts[0], parts[1], parts[2]
     allg["hl"], allg["gw"] = parts[3], parts[4]
-    # the geometric-ceiling row is a single reported point (silent_marked only), not a swept
-    # knob -- drop it so the silent bracket pivot has all three levels per cell.
-    allg = allg[allg["gw"].isin(["off", "on"])]
+    # the geometric-ceiling row AND the stage-source rows (pooled_group/pooled_elim, ADR-0033) are
+    # single reported points (silent_marked only), not swept knobs -- drop them so the silent
+    # bracket pivot has all three levels per cell.
+    allg = allg[allg["gw"].isin(["off", "on"]) &
+                allg["source"].isin(["pooled_all", "pooled_post", "pooled_pre", "regime_matched"])]
     assert {"silent_none", "silent_marked", "silent_all"} <= set(allg["silent"])
     piv = allg.pivot_table(index=["window", "cond", "source", "hl", "gw"],
                            columns="silent", values="pct_changed")

@@ -163,17 +163,19 @@ the band.)*
 | Regulation open play (the floor) | **0.0427** | 675 |
 
 **2. "The high rate is just trailing teams chasing a level scoreline."** It isn't. Second-half
-stoppage scores at about the same rate whether the game is level at 90 (0.0886) or not (0.0786),
-with heavily overlapping intervals. Conditioning the entire model on score-at-90 barely moves the
-headline, **24.8% → 24.5%**.
+stoppage scores at about the same rate whether the game is level at 90 (0.0886 [0.0567, 0.1318]) or
+not (0.0786 [0.0581, 0.1039]), with heavily overlapping intervals. Conditioning the entire model on
+score-at-90 barely moves the headline, **24.8% → 24.5%**.
 
 **3. "The high rate is a knockout-stage effect."** It isn't. Group stage 0.0847 (56 goals / 660.8
 live-min) vs elimination 0.0727 (17 / 233.7) — the point estimate actually leans *higher* in the
-group stage (rate ratio 1.17, binomial p = 0.69). No separate elimination effect to price.
+group stage (rate ratio 1.17, binomial p = 0.69). No separate elimination effect to price. Carried
+through the model, a group-stage-only λ gives 25.9% and a knockout-only λ gives 21.5% — both inside
+the envelope (sensitivity table, knockout-vs-group row).
 
 **4. "The result figure assumes a goal is equally likely to fall to either team."** The model does
 split omitted-time goals 50/50; measured in the data the trailing team takes **0.548** of lead-by-one
-stoppage goals (n = 31, interval spanning 0.5). Sweeping the split 0.40–0.60 moves the *result*
+stoppage goals (n = 31, 95% CI [0.375, 0.713]). Sweeping the split 0.40–0.60 moves the *result*
 figure only **12.0%–13.9%** and leaves the *scoreline* headline untouched (it never uses the split).
 
 ---
@@ -199,17 +201,21 @@ a time (the 21.4–27.3% band) or all jointly (the 18.9–28.6% envelope).
 
 | Modeling choice | Levels → X% | Spread |
 |---|---|---|
-| **λ source** | all-pooled **24.8** · POST-only 23.7 · regime-matched 24.9 · PRE-only 27.3 | ~3.6 pts |
-| **Gross-up** (in-stoppage wasting) | off 21.4 → **on 24.8** → geometric 26.0 | ~4.6 pts |
 | **Decay half-life** | h=2 23.3 · **h=4 24.8** · h=8 26.1 | ~2.8 pts |
-| **Conditioning** | overall **24.8** · split by tied/not-tied 24.5 | ~0.3 pts |
-| One-at-a-time band (min–max of the above) | **21.4% – 27.3%** | 5.9 pts ≈ 0.9× sampling |
-| Full joint envelope (all knobs together) | **18.9% – 28.6%** | 9.7 pts ≈ 1.4× sampling |
+| **Score at 90** (conditioning) | overall **24.8** · split by tied/not-tied 24.5 | ~0.3 pts |
+| **Knockout vs group stage** | all matches **24.8** · group stage 25.9 · knockout 21.5 | ~4.4 pts |
+| **λ source** (PRE vs POST) | all-pooled **24.8** · POST-only 23.7 · regime-matched 24.9 · PRE-only 27.3 | ~3.5 pts |
+| **Gross-up** (in-stoppage wasting) | off 21.4 → **on 24.8** → geometric 26.0 | ~4.6 pts |
+| One-at-a-time band (min–max of the swept knobs) | **21.4% – 27.3%** | 5.9 pts ≈ 0.9× sampling |
+| Full joint envelope (all swept knobs together) | **18.9% – 28.6%** | 9.7 pts ≈ 1.4× sampling |
 
 The one-at-a-time band (5.9 pts) is about the size of the sampling CI (6.9 pts), and the joint
 envelope only modestly exceeds it — the headline does not hinge on any single knob. The PRE-only λ
 source sets the top of the band (27.3%) on a thin, wide-interval PRE sample; the central pooled rate
-is the one to read. The data-gap handling is **not** a sweepable knob: "credit none" (≈10.8%) and
+is the one to read. The knockout-vs-group row is a separate λ-source robustness check (like the
+geometric ceiling) — sourcing every match's rate from one stage gives 25.9% (group) or 21.5%
+(knockout), both inside the envelope — and is excluded from the band/envelope so it never re-centres
+the headline. The data-gap handling is **not** a sweepable knob: "credit none" (≈10.8%) and
 "credit all" (≈37.3%) are *known-biased bounds*, not honest uncertainty — the estimator is
 calibrated to the defensible middle and only its calibration error enters the CI (ADR-0025/0031).
 

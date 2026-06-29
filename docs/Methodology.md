@@ -86,7 +86,7 @@ When a side trails late it throws bodies forward, so maybe the premium is only d
 
 **Objection 3: The high rate is a knockout-stage effect.**
 
-Maybe the late rate is inflated by win-or-go-home stakes. It isn't. Split the same window by match type: group stage 0.0847 (56 goals / 660.8 live-minutes) against elimination 0.0727 (17 goals / 233.7 live-minutes), the point estimate actually leaning *higher* in the group stage (rate ratio 1.17, binomial p = 0.69). There is no separate elimination effect to price.
+Maybe the late rate is inflated by win-or-go-home stakes. It isn't. Split the same window by match type: group stage 0.0847 (56 goals / 660.8 live-minutes) against elimination 0.0727 (17 goals / 233.7 live-minutes), the point estimate actually leaning *higher* in the group stage (rate ratio 1.17, binomial p = 0.69). There is no separate elimination effect to price. Carried all the way through the model, sourcing every match's rate from the group stage alone lands the headline at 25.9% and from the knockouts alone at 21.5% — both inside the envelope, with the all-matches central at 24.8%.
 
 **Objection 4: The result figure assumes a goal is equally likely to fall to either team.**
 
@@ -109,14 +109,15 @@ Two kinds of uncertainty, kept apart. *Sampling* uncertainty is the bootstrap CI
 
 | Modeling choice | Levels → X% | Spread |
 |---|---|---|
-| **λ source** | all-pooled **24.8** · POST-only 23.7 · regime-matched 24.9 · PRE-only 27.3 | ~3.6 pts |
-| **Gross-up** (in-stoppage wasting) | off 21.4 → **on 24.8** → geometric 26.0 | ~4.6 pts |
 | **Decay half-life** | h=2 23.3 · **h=4 24.8** · h=8 26.1 | ~2.8 pts |
-| **Conditioning** | overall **24.8** · split by tied/not-tied 24.5 | ~0.3 pts |
+| **Score at 90** (conditioning) | overall **24.8** · split by tied/not-tied 24.5 | ~0.3 pts |
+| **Knockout vs group stage** | all matches **24.8** · group stage 25.9 · knockout 21.5 | ~4.4 pts |
+| **λ source** (PRE vs POST) | all-pooled **24.8** · POST-only 23.7 · regime-matched 24.9 · PRE-only 27.3 | ~3.5 pts |
+| **Gross-up** (in-stoppage wasting) | off 21.4 → **on 24.8** → geometric 26.0 | ~4.6 pts |
 | One-at-a-time band | **21.4% – 27.3%** | 5.9 pts ≈ 0.9× sampling |
 | Full **joint** envelope | **18.9% – 28.6%** | 9.7 pts ≈ 1.4× sampling |
 
-The one-at-a-time band (5.9 pts) is about the size of the sampling CI (6.9 pts), and the joint envelope (9.7 pts) only modestly exceeds it. The headline does not hinge on any single knob. The PRE-only λ source sets the top of the band at 27.3%, on a thin, wide-interval PRE sample; the central pooled rate is the one to read.
+The one-at-a-time band (5.9 pts) is about the size of the sampling CI (6.9 pts), and the joint envelope (9.7 pts) only modestly exceeds it. The headline does not hinge on any single knob. The PRE-only λ source sets the top of the band at 27.3%, on a thin, wide-interval PRE sample; the central pooled rate is the one to read. The knockout-vs-group row recomputes the headline sourcing every match's rate from one stage (25.9% group, 21.5% knockout); both stay inside the envelope and the row is reported separately, excluded from the band/envelope.
 
 Flip mechanics: the model splits omitted-time goals 50/50 between the two teams (Objection 4) and treats any match leading by two or more at 90 as unflippable. 95 of the 314 matches were already decided by two or more goals at 90, so they cannot flip at all.
 

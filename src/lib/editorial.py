@@ -129,6 +129,54 @@ def despine(ax, keep=("left", "bottom")):
     ax.set_axisbelow(True)
 
 
+def plain_table_figure(*, columns, cell_text, col_widths, aligns, savepath,
+                       figsize=(11.0, 3.0), fontsize=11, bold_cells=(), bold_rows=(),
+                       band=(0.01, 0.04, 0.98, 0.92), dpi=200):
+    """Render a BARE black-and-white table — header + data rows, light rules, nothing else.
+
+    No title block, no subtitle, no source footer, and NO colour of any kind (the article
+    prose supplies all context; see the Substack tables). Header is bold ink with a rule
+    above and below; body rows carry a faint separator and a closing rule under the last row.
+    `bold_cells` (set of (body_row, col), 0-based among DATA rows) and `bold_rows` (set of
+    body_row) bold text for emphasis — emphasis stays monochrome. `aligns` is one of
+    'left'/'center'/'right' per column. Returns the saved path.
+    """
+    bold_cells = set(bold_cells)
+    bold_rows = set(bold_rows)
+    nbody = len(cell_text)
+
+    with plt.rc_context(RC):
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_axes(list(band))
+        ax.axis("off")
+        t = ax.table(cellText=cell_text, colLabels=columns, colWidths=col_widths,
+                     bbox=[0, 0, 1, 1])
+        t.auto_set_font_size(False)
+        t.set_fontsize(fontsize)
+        for (row, col), cell in t.get_celld().items():
+            cell.set_edgecolor("none")
+            cell.PAD = 0.05
+            ha = aligns[col]
+            if row == 0:  # header: bold ink, rule above + below
+                cell.visible_edges = "TB"
+                cell.set_edgecolor(INK)
+                cell.set_linewidth(1.2)
+                cell.set_text_props(fontweight="bold", ha=ha, color=INK)
+            else:  # body: faint separators; bold the last row's closing edge in ink
+                br = row - 1
+                last = br == nbody - 1
+                cell.visible_edges = "B"
+                cell.set_edgecolor(INK if last else GRID)
+                cell.set_linewidth(1.2 if last else 0.7)
+                weight = "bold" if (br in bold_rows or (br, col) in bold_cells) else "normal"
+                cell.set_text_props(ha=ha, color=INK, fontweight=weight)
+
+        fig.savefig(savepath, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+    print(f"  wrote {savepath}")
+    return savepath
+
+
 def table_figure(*, title, subtitle, source, columns, cell_text, col_widths,
                  aligns, savepath, figsize=(11.0, 4.8),
                  band=(0.04, 0.17, 0.92, 0.44), left_in=0.42, fontsize=11,
