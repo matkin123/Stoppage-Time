@@ -60,7 +60,7 @@ def _panel(ax, pred: dict[int, float], column: str, title: str, color: str, high
             ax.scatter([truth[mid]], [pred[mid]], s=52, facecolor="none",
                        edgecolor=editorial.INK, linewidth=1.1, zorder=4)
 
-    ax.text(0.04, 0.96, f"r = {m['r']:.2f}\nMAE = {m['mae']:.2f}",
+    ax.text(0.04, 0.96, f"r = {m['r']:.2f}\nMAE = {m['mae']:.2f} min",
             transform=ax.transAxes, va="top", ha="left", fontsize=10,
             color=color, fontweight="bold")
     ax.set_title(title, fontsize=11.5, color=editorial.INK, pad=8, loc="left")
@@ -73,18 +73,21 @@ def main() -> None:
     config.ensure_dirs()
 
     with plt.rc_context(editorial.RC):
-        fig = plt.figure(figsize=(12.4, 8.2))
+        # height tuned so there is ~one footer-line of clearance between the x-axis
+        # labels (pinned to the top via the North-anchored square panels) and the
+        # bottom-anchored source footer; extra height lands entirely in that gap.
+        fig = plt.figure(figsize=(12.4, 8.35))
         H = fig.get_size_inches()[1]
         content_top = editorial.titleblock(
             fig,
-            "My stoppage-time figures match an independent benchmark",
+            "My stoppage time estimates closely match Nate Silver’s benchmark",
             "Each dot is one of 32 World Cup 2018 matches, comparing my analysis with Nate "
             "Silver’s independent hand-coded figures. The closer to the line, the closer the "
             "agreement — exact on the clock (right), strong on the model (left).",
             "World Cup 2018 — the one tournament with an independent published benchmark "
             "(Nate Silver, FiveThirtyEight). 32 matches.\nSource: StatsBomb open data; "
             "author’s analysis.",
-            content_gap_in=0.42)
+            content_gap_in=0.42, subtitle_width_in=8.1)
         ax_bottom = 0.115
         panel_top = content_top - 0.30 / H  # leave room for each panel's title
         h = panel_top - ax_bottom

@@ -388,8 +388,8 @@ def _scatter_estimate_pub(sc):
         # Wide canvas for side whitespace: the plot is a square and height-limited,
         # so the extra width does NOT change its physical size — it just becomes
         # margin, and the symmetric box + anchor "N" keep the plot centred.
-        fig = plt.figure(figsize=(11.4, 9.1))
-        ax = fig.add_axes([0.10, 0.15, 0.80, 0.64])
+        fig = plt.figure(figsize=(11.4, 8.92))
+        ax = fig.add_axes([0.10, 0.153, 0.80, 0.653])
         ax.set_anchor("N")
 
         # identity (fairness) line
@@ -436,12 +436,14 @@ def _scatter_estimate_pub(sc):
         ax.tick_params(length=0, labelsize=9.5)
 
         source = (FOOTER.split("\n")[0] +
+                  "\n“Typical” is the median. Mean values are: stoppage owed 17.6 mins, "
+                  "played 8.8 mins, and missing 8.8 mins." +
                   "\nSource: StatsBomb open data; author’s analysis, calibrated to "
                   "Nate Silver at r = 0.88, MAE = 1.77 mins")
         _titleblock(
             fig,
-            "Matches play about half the stoppage time they’re owed",
-            [f"Each red dot is one of {n} matches. {pct_above:.0%} of matches ended too early,",
+            "Stoppage time is under-awarded in 96% of matches",
+            [f"Each dot is one of {n} matches. {pct_above:.0%} of matches ended too early (shown in red),",
              "with more stoppage owed than was actually played."],
             source, left_in=1.7)
     _save(fig, "agg_01_scatter_estimate_vs_played.png")

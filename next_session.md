@@ -11,6 +11,28 @@ these items into one marathon session.
 
 ---
 
+## DONE (2026-07-01, ADR-0034) — Team-quality / Elo test for the outcome-flip — LOCK UNCHANGED
+
+Settled the reviewer objection that team quality should push `p_trail` below 0.5 and shrink the 13.0%
+flip. Ran both analyses (standalone `src/team_quality_flip.py`, ANALYSIS ONLY — no parquet/grid/figure/
+params touched; faithfulness gate reproduced locked flip `0.12976`). **(A)** only **39%** of the flip is
+`p_trail`-sensitive (tied 7.86 pp immune + lead_by_1 5.12 pp sensitive); tied floor = 32% of the 24.8%
+scoreline; `flip/scoreline = 0.524` is a state-census identity. **(B)** sourced pre-match World Football
+Elo (eloratings.net) for all 314 (score-integrity checked); lead_by_1 mean `Δ = −38` Elo (leader
+stronger 60% — modest); logit β_Δ = **+0.33/100 Elo (p<0.001)** — quality significant in the crossover
+DIRECTION, crossover `Δ* ≈ −146`; `corr(Δ,μ) ≈ 0` and μ-weighting nudges `p_trail` UP; re-weighted flip
+**12.9%–13.4%** (max move **0.38 pp** < 0.5 pp gate). **Decision: `p_trail=0.5` / flip 13.0% UNCHANGED**,
+no s08 row — Substack pre-empt. Exhibit `docs/team_quality_flip_test.md`; full record `docs/decisions.md`
+**ADR-0034**. New sourcing: `src/fetch_elo.py`, `src/lib/elo.py`, `data/raw/elo/*.tsv`. README: no change
+(0.548 split pre-empt already stands). Headline scoreline 24.8% untouched by construction.
+
+## NEXT UNIT (editorial, NOT modeling) — refresh hand-authored prose/figures to 24.8%/13.0%
+
+The editorial refresh below — re-render prose/figures still hard-coding the OLD 23.6%/12.1% — remains
+queued (see the DONE + RE-LOCKED block). Do as its own session per CLAUDE.md §6.
+
+---
+
 ## DONE + RE-LOCKED (2026-06-25) — HEADLINE = 24.8% scoreline / 13.0% flip (ADR-0031). Method 2 + PRE celebration allowance ADOPTED.
 
 **User-approved adoption (human checkpoint).** Both measured-but-pending changes are now PRODUCTION and the

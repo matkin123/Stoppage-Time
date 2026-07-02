@@ -5,6 +5,97 @@ number and its band must be locked here (with the chosen knob_set) before publis
 
 ---
 
+## ADR-0034 — Team quality and the outcome-flip: how quality enters (and mostly doesn't); Elo/quality test RUN (flip move 0.38 pp) — LOCK UNCHANGED (2026-07-01)
+
+**Analysis/reasoning session, not a build or a lock.** Triggered by a reviewer objection to the
+outcome-flip's equal team-split: *the team leading by one at 90' is on average the better team, so the
+trailing (worse) team scores fewer than half the omitted-window goals — `p_trail < 0.5` — and P(flip)
+should be **less** than half of P(scoreline), not the ~0.52 the model reports.* This ADR records how
+team quality does/doesn't factor into the model and SPECS the two analyses that settle it
+(`prompts/team_quality_flip_test.md`). No parquet, no grid, no figure, no params touched.
+
+**Where the objection can and cannot land.**
+1. **Headline scoreline (24.8%) is structurally immune.** The scoreline metric is `p_change(mu)` — ≥1
+   extra goal by *either* team, riding total μ; it never attributes the scorer. Only the flip's
+   lead-by-1 branch (`src/s08_counterfactual.py:371`, `p_change(mu/2)` ⇒ `p_trail = 0.5`) uses the
+   split. No theory of who scores can move the headline.
+2. **Quality lowers `p_trail` at the match level — granted — but two selections gut the aggregate
+   gap.** *Exactly-1* selects against mismatches (a better team wins by 2+, which becomes
+   `lead_by_2plus`); *still-live-at-90* selects against blowouts. The lead-by-1 pool is skewed to
+   competitive matchups, so the mean signed quality gap is modest, not the France–Venezuela extreme.
+3. **Chase vs quality — and why you must NOT set `p_trail` from Elo.** Trailing teams chase (more
+   shots/possession late); leaders game-manage. Realized `p_trail` is the *net*, and ADR-0032 measured
+   it at **0.548** (2H stoppage, n=31) / **0.509** (all goals, n=287) — centred at/above 0.5, the
+   *opposite* of the objection's direction (n=31 CI [0.375, 0.713] can't resolve 0.50 vs 0.55). The
+   Elo→scoring mapping is calibrated on open play; the 90'-trailing-and-chasing state is exactly where
+   it breaks. **Use quality to TEST the observed scorer data, never to SET `p_trail`.**
+4. **User's crossover hypothesis (2026-07-01):** chase dominates at *narrow* quality gaps, quality
+   dominates at *wide* gaps → `p_trail(Δ)` increasing in `Δ = Elo(trail) − Elo(lead)`, crossing 0.5 at
+   some `Δ* < 0`. A nonlinear term (Δ²/spline) in the regression tests it.
+
+**Why "flip ≈ half of scoreline" is a STATE-MIX identity, not a `p_trail` artifact (answers the
+objection's structural claim).** In the small-μ limit the ratio is arithmetic on the state census
+(tied 98 / lead_by_1 121 / lead_by_2plus 95 of 314):
+
+    P(flip)/P(scoreline) ≈ (n_tied + p_trail·n_lead1) / N = (98 + 0.5·121)/314 ≈ 0.50   (observed 0.52).
+
+The **95 lead-by-2plus** matches (unflippable) do more to depress the ratio than `p_trail` ever could;
+the **98 tied** matches (flip on *any* goal) floor it at 98/314 ≈ **0.31** even at `p_trail = 0`. The
+whole supported `p_trail ∈ [0.40, 0.60]` range moves the ratio only 0.47–0.54 (flip 12.0%–13.9%,
+ADR-0032). So the objection's intuition ("a significant share of lead-by-1 matches never had a chance
+to flip") is already *implemented* — via the hard-zeroed lead-by-2plus block and the lead-by-1 halving
+— and cannot drag the flip "well below half."
+
+**The one first-order channel the pooled mean misses.** Per-match `p_trail` heterogeneity washes out
+(Jensen, O(μ²)); but a **`p_trail`×μ covariance** does not — if the highest-omitted-time lead-by-1
+matches are also the biggest mismatches, the μ-weighted mean `p_trail` sits below 0.5 and the flip
+drops linearly. Must be measured (test Analysis B4).
+
+**DECISION — `p_trail = 0.5` UNCHANGED; headline untouched regardless.** Two analyses
+(`prompts/team_quality_flip_test.md`, pointer in `next_session.md`) settle it: **(A)** exact
+state-decomposition of the locked 13.0% flip (how much is even `p_trail`-sensitive); **(B)**
+Elo-conditioned `p_trail` — regression for explanatory power + the crossover, the `p_trail`×μ
+covariance, then re-weight and compare. Add an s08 sensitivity row ONLY if the re-weighted flip moves
+> 0.5 pp (else it is a Substack pre-empt). README: no change needed — the 0.548 split pre-empt already
+stands in the README results section. Prior art: [[ADR-0032]] (measured the split), memory
+`project-flip-split-validated`.
+
+**RESULT — analyses RUN 2026-07-01, LOCK UNCHANGED (max Elo-conditioned flip move 0.38 pp < 0.5 pp
+gate).** Standalone `src/team_quality_flip.py` (READS production parquet + cached World Football Elo
+from eloratings.net via `src/fetch_elo.py`; writes only `docs/team_quality_flip_test.md`; touches no
+parquet/grid/figure/params). Faithfulness gate passed: rebuilt flip = locked `0.12976` (<1e-6). Elo
+join integrity-checked — final-score set matches StatsBomb for all 314.
+
+- **(A) State-decomposition.** Flip 12.98% = tied **7.86 pp** (`1−exp(−μ)`, `p_trail`-IMMUNE) +
+  lead_by_1 **5.12 pp** (`1−exp(−μ/2)`, `p_trail`-sensitive) + lead_by_2plus **0**. Only **39.4%**
+  of the flip is `p_trail`-sensitive; the tied-only floor (7.86%, at `p_trail=0`) is **31.7%** of the
+  24.8% scoreline. `flip/scoreline = 0.524` is a state-census identity, confirming ADR-0034's
+  arithmetic (the 95 unflippable lead_by_2plus matches, not `p_trail`, hold the ratio near half).
+- **(B) Elo-conditioned `p_trail`.** Lead_by_1 mean `Δ = Elo(trail)−Elo(lead) = −38` Elo (median −49),
+  leader stronger in **60%** of matches — modest, not the blowout the objection imagines (exactly-1 +
+  still-live selections gut the gap, as predicted). Logit `trailing_scored ~ Δ+Δ²+minute+C(tournament)`
+  on the powered anchor (all 1-goal-game goals, n=287): **β_Δ = +0.33 per 100 Elo (p<0.001)**,
+  pseudo-R² 0.087 — quality IS a significant predictor, in the user's crossover DIRECTION (`p_trail`
+  RISES with Δ); crossover `Δ* ≈ −146` Elo, so the mean lead_by_1 match sits ABOVE Δ* → predicted
+  `p_trail > 0.5`. Only **39/121 (32%)** of lead_by_1 matches sit BELOW Δ* (leader >146 Elo stronger ⇒
+  predicted `p_trail<0.5`) — the objection's actual footprint (12% of all 314). Δ* is a RATIO estimate:
+  **sign robust** (negative in 99.2% of 3k bootstrap resamples of the n=287 anchor) but **location soft**
+  (simple `Y~Δ` gives Δ*≈−88; bootstrap 95% ≈ [−158, −18]); it's interpolation within the observed
+  Δ∈[−507,+389] range, and a DIAGNOSTIC not a load-bearing input (even at −88 the mean −38 match predicts
+  `p_trail>0.5`; the conclusion rests on the ≤0.38pp re-weight). The added-time-only cut (2H stoppage
+  n=31) is underpowered (p=0.76), slope borrowed from the anchor (no external-era caveat). **B4 covariance:** `corr(Δ, μ_omitted) = +0.07` (≈0);
+  μ-weighted mean Δ = −28 vs unweighted −38 → μ-weighting nudges `p_trail` UP, opposite the feared
+  covariance. **B5 re-weight:** swapping flat 0.5 for fitted `p_trail(Δ)` gives flip
+  **12.92%–13.35%** (abs-level 13.10%), max move **+0.38 pp**, inside the locked CI [11.3%, 15.1%].
+- **Bottom line.** Objection's premise partly true (leader usually stronger; quality predicts) but its
+  conclusion fails: the realized `p_trail` (observed scorers, chase included) is at/above 0.5, only a
+  minority of the flip is even sensitive, and the covariance channel is null. `p_trail = 0.5` and the
+  13.0% flip **LOCK UNCHANGED**; no s08 row added — Substack pre-empt. Headline 24.8% untouched by
+  construction. Exhibit: `docs/team_quality_flip_test.md`. New sourcing: `data/raw/elo/*.tsv`,
+  `src/fetch_elo.py`, `src/lib/elo.py`.
+
+---
+
 ## ADR-0033 — Group-stage vs knockout as a lambda-source robustness ROW (headline X% recomputed per stage) — LOCK UNCHANGED (2026-06-29)
 
 **Publication-prep session, not a re-lock.** Triggered by a request to report the knockout-vs-group

@@ -110,7 +110,7 @@ Genuine stoppages (celebrations, subs, cards, injuries) are credited separately.
 Nate Silver's by-hand World Cup 2018 measurement, owed stoppage tracks his "expected" at
 **r = 0.875** (MAE 1.77 min) and stoppage *played* tracks his "actual" at **r = 0.992**. Across the
 314 matches, owed stoppage averages ~**17.6** min/match and played ~**8.9**, leaving ~**8.8**
-omitted minutes, positive in **97%** of matches. *(In 2022 FIFA directed referees to add all
+omitted minutes, positive in **96%** of matches. *(In 2022 FIFA directed referees to add all
 time-wasting — chiefly full goal-celebration time rather than perceived excess; the estimator
 applies this PRE/POST-conditionally.)*
 
@@ -177,6 +177,21 @@ the envelope (sensitivity table, knockout-vs-group row).
 split omitted-time goals 50/50; measured in the data the trailing team takes **0.548** of lead-by-one
 stoppage goals (n = 31, 95% CI [0.375, 0.713]). Sweeping the split 0.40–0.60 moves the *result*
 figure only **12.0%–13.9%** and leaves the *scoreline* headline untouched (it never uses the split).
+
+**5. "But the team leading by one is usually the stronger side, so an even split still overstates
+flips."** The mirror of Objection 4, and it fails on the data. Scope first, by *flip mass*: of the
+13.0% flip the 98 tied games contribute **7.86 pp** (immune — any goal flips) and the 95 two-goal
+games contribute **0** (unflippable), leaving the 121 one-goal games' **5.12 pp — just 39% of the
+flip** — as the only mass the split can move. Even handing the leader *every* omitted goal floors the
+flip at **7.86% = 32% of the 24.8% scoreline**. Pre-match World Football Elo for all 314: in
+those matches the leader is stronger 60% of the time but by only **38 Elo**, because "exactly one goal
+apart at 90" strips out the mismatches. Quality does predict who scores next (logit on the Elo gap
+**β = +0.33/100 Elo, p < 0.001**), but the trailing team's chase outweighs it until the leader is
+~**146 Elo** stronger — a bar only **39 of the 121** clear. So the trailing side still takes more
+than half: **0.509** across one-goal games (any minute at a one-goal margin, n = 287), **0.548** in the
+stoppage portion alone (n = 31). Re-pricing every match's split by its fitted, quality-conditioned
+trailing-share moves the *result* figure at most **0.38 pp** (to 12.9%–13.4%, inside the CI); scoreline
+untouched. (ADR-0034; `docs/team_quality_flip_test.md`.)
 
 ---
 

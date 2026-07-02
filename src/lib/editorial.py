@@ -131,15 +131,20 @@ def despine(ax, keep=("left", "bottom")):
 
 def plain_table_figure(*, columns, cell_text, col_widths, aligns, savepath,
                        figsize=(11.0, 3.0), fontsize=11, bold_cells=(), bold_rows=(),
-                       band=(0.01, 0.04, 0.98, 0.92), dpi=200):
+                       band=(0.01, 0.04, 0.98, 0.92), dpi=200,
+                       title=None, source=None, left_in=0.46, title_size=17):
     """Render a BARE black-and-white table — header + data rows, light rules, nothing else.
 
-    No title block, no subtitle, no source footer, and NO colour of any kind (the article
-    prose supplies all context; see the Substack tables). Header is bold ink with a rule
-    above and below; body rows carry a faint separator and a closing rule under the last row.
-    `bold_cells` (set of (body_row, col), 0-based among DATA rows) and `bold_rows` (set of
-    body_row) bold text for emphasis — emphasis stays monochrome. `aligns` is one of
-    'left'/'center'/'right' per column. Returns the saved path.
+    NO colour of any kind (the article prose supplies the context; see the Substack tables).
+    Header is bold ink with a rule above and below; body rows carry a faint separator and a
+    closing rule under the last row. `bold_cells` (set of (body_row, col), 0-based among DATA
+    rows) and `bold_rows` (set of body_row) bold text for emphasis — emphasis stays
+    monochrome. `aligns` is one of 'left'/'center'/'right' per column.
+
+    By default there is no title, subtitle, or source footer. Optionally pass `title` and/or
+    `source` to add the family's left-aligned title and a faint source footer (still no
+    subtitle, still monochrome); when either is given the table band is recomputed in inches
+    so the gaps above/below stay consistent across figure sizes. Returns the saved path.
     """
     bold_cells = set(bold_cells)
     bold_rows = set(bold_rows)
@@ -147,6 +152,24 @@ def plain_table_figure(*, columns, cell_text, col_widths, aligns, savepath,
 
     with plt.rc_context(RC):
         fig = plt.figure(figsize=figsize)
+        if title is not None or source is not None:
+            W, H = figsize
+            x = left_in / W
+            top_in = 0.18  # table top edge, inches from the figure top
+            if title is not None:
+                fig.text(x, 1.0 - 0.44 / H, title, ha="left", va="top",
+                         fontsize=title_size, fontweight="bold", color=INK)
+                top_in = 0.44 + title_size / 72.0 + 0.30  # title height + gap below
+            bottom_in = 0.12  # table bottom edge, inches from the figure bottom
+            if source is not None:
+                slines = source.split("\n")
+                for i, line in enumerate(slines):
+                    y_in = 0.30 + 0.135 * (len(slines) - 1 - i)  # first line on top
+                    fig.text(x, y_in / H, line, ha="left", va="bottom",
+                             fontsize=8, color=FAINT)
+                bottom_in = 0.30 + 0.135 * (len(slines) - 1) + 8 / 72.0 + 0.26
+            band = (x, bottom_in / H, 1.0 - 2 * left_in / W,
+                    1.0 - (top_in + bottom_in) / H)
         ax = fig.add_axes(list(band))
         ax.axis("off")
         t = ax.table(cellText=cell_text, colLabels=columns, colWidths=col_widths,

@@ -30,13 +30,8 @@ def main() -> None:
 
     cell_text = [[label, f"{int(allowances[key])} sec"] for key, label in DISPLAY]
 
-    editorial.table_figure(
+    editorial.plain_table_figure(
         title="A restart only owes time once it drags past these limits",
-        subtitle=[
-            "Each routine restart is allowed a normal duration. Only the seconds beyond it",
-            "count as owed stoppage — a 50-second throw-in owes 30; a 15-second one owes",
-            "nothing. The four thresholds are adopted unchanged from Nate Silver’s stopwatch study.",
-        ],
         source=("Allowances applied to every routine restart across all 314 matches; the "
                 "excess over each is credited as owed stoppage.\nSource: Nate Silver / "
                 "FiveThirtyEight (2018 World Cup stopwatch study); author’s analysis."),
@@ -44,8 +39,8 @@ def main() -> None:
         cell_text=cell_text,
         col_widths=[0.62, 0.38],
         aligns=["left", "center"],
-        hilite_cells=[(r, 1) for r in range(len(DISPLAY))],
-        figsize=(9.6, 4.6),
+        left_in=0.42,
+        figsize=(9.6, 3.4),
         savepath=config.FIGURES / "t_restart_allowances.png",
     )
 
