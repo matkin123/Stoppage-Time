@@ -15,11 +15,8 @@ traces to a script, a checkpointed parquet table, and a documented assumption (s
 [`docs/decisions.md`](docs/decisions.md), the ADR log, and [`CLAUDE.md`](CLAUDE.md), the project
 contract).
 
-> **The public write-up is [`docs/substack_post_v3.md`](docs/substack_post_v3.md)** — the latest
-> narrative version. This README mirrors its structure (headline, the data, how it's measured, the
-> four objections, results & sensitivity) and is kept in sync with it. Always read the
-> highest-numbered `docs/substack_post_v*` as the current draft; the headline lock lives in
-> [`docs/decisions.md`](docs/decisions.md) ADR-0031.
+> **The public write-up is on Substack: [The Stoppage Time That Never Gets Played](https://matkin.substack.com/p/the-stoppage-time-that-never-gets).**
+> The headline lock lives in [`docs/decisions.md`](docs/decisions.md) ADR-0031.
 
 ---
 
@@ -140,7 +137,7 @@ metric is deterministic; randomness enters only the confidence-interval bootstra
 
 Full methodology (estimand, identification, every load-bearing assumption):
 [`docs/Methodology.md`](docs/Methodology.md) and the narrative
-[`docs/substack_post_v3.md`](docs/substack_post_v3.md).
+[Substack write-up](https://matkin.substack.com/p/the-stoppage-time-that-never-gets).
 
 ---
 
@@ -307,7 +304,7 @@ tests/       pytest acceptance gates (one per stage)
 | Document | Purpose |
 |---|---|
 | [`CLAUDE.md`](CLAUDE.md) | Project contract: goal, locked decisions, conventions, per-stage gates, session/README-sync rule |
-| [`docs/substack_post_v3.md`](docs/substack_post_v3.md) | Latest public narrative write-up (this README mirrors its structure; always read the highest-numbered `substack_post_v*`) |
+| [Substack post](https://matkin.substack.com/p/the-stoppage-time-that-never-gets) | The published public narrative write-up |
 | [`docs/Methodology.md`](docs/Methodology.md) | Methodology write-up (estimand, the three steps, assumptions) |
 | [`docs/decisions.md`](docs/decisions.md) | ADR log — every methodology choice, newest first; the headline lock (ADR-0031) |
 | [`docs/data_dictionary.md`](docs/data_dictionary.md) | Stage → table → column definitions |
