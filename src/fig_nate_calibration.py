@@ -105,8 +105,11 @@ def main() -> None:
 
     path = config.FIGURES / "f07_nate_calibration.png"
     fig.savefig(path, dpi=130, bbox_inches="tight")
-    plt.close(fig)
     print(f"  wrote {path}")
+    # Same chart, with even margins on all four sides and a thin light-grey frame.
+    bordered = config.FIGURES / "f07_nate_calibration_bordered.png"
+    editorial.save_padded(fig, bordered, side_pad_in=0.3, border=True)
+    print(f"  wrote {bordered}")
     print(f"  estimator vs expected: r={mL['r']:.3f} MAE={mL['mae']:.2f}  |  "
           f"board vs actual: r={mR['r']:.3f} MAE={mR['mae']:.2f}")
 

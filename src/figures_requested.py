@@ -285,6 +285,45 @@ def _save(fig, name):
     print(f"  wrote {path}")
 
 
+def _save_hpad(fig, name, side_pad_in, vert_pad_in=0.1, border=False):
+    """Like _save but adds fixed whitespace around the tight crop: `side_pad_in` inches
+    on the left/right and `vert_pad_in` inches on the top/bottom.
+
+    _save's bbox_inches="tight" crops to the outermost artists (+0.1" pad), so widening
+    the figure alone can't add margin — it gets trimmed. Instead we take the tight bbox
+    (in inches) and expand its extents, leaving all plotted content byte-identical.
+
+    If `border` is truthy, a thin light-grey frame is drawn just inside the padded crop."""
+    from matplotlib.transforms import Bbox
+    fig.canvas.draw()
+    try:
+        r = fig.canvas.get_renderer()
+    except AttributeError:
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        r = FigureCanvasAgg(fig).get_renderer()
+    bb = fig.get_tightbbox(r)  # inches
+    box = Bbox.from_extents(bb.x0 - side_pad_in, bb.y0 - vert_pad_in,
+                            bb.x1 + side_pad_in, bb.y1 + vert_pad_in)
+    path = OUT / name
+    fig.savefig(path, dpi=130, bbox_inches=box)
+    plt.close(fig)
+    # Draw the frame on the finished crop. Doing it in matplotlib is unreliable here:
+    # savefig(bbox_inches=box) crops by translating transFigure, but dpi_scale_trans
+    # (which figure-level artists use) is NOT translated, so a rectangle drawn there
+    # lands at its absolute position, not the crop's. Post-processing the PNG sits the
+    # frame exactly in the padded margin, cleanly outside the chart content.
+    if border:
+        from PIL import Image, ImageDraw
+        lw = 2  # px
+        off = lw // 2  # centre the stroke inside the image edge
+        img = Image.open(path).convert("RGB")
+        ImageDraw.Draw(img).rectangle(
+            [off, off, img.width - 1 - off, img.height - 1 - off],
+            outline=(204, 204, 204), width=lw)
+        img.save(path)
+    print(f"  wrote {path}")
+
+
 # ================================================================ publication figures
 # Two charts (agg_01 scatter, agg_02 bar) are redesigned to the editorial style guide
 # (docs/editorial_graphics_style_guide.md). These use dedicated render functions so the
@@ -310,7 +349,8 @@ BUCKET_PUB = {
 }
 
 
-def _bar_buckets_pub(prod):
+def _bar_buckets_pub(prod, out_name="agg_02_productivity_by_bucket.png",
+                     side_pad_in=None, border=False):
     prod = prod.set_index("bucket").reindex(BUCKET_ORDER).reset_index()
     reg = prod[~prod["bucket"].isin(STOPPAGE_LABELS)]
     baseline = reg["goals"].sum() / reg["live_min"].sum()
@@ -360,7 +400,7 @@ def _bar_buckets_pub(prod):
         ax.axvline(5.5, color="#D7DADE", lw=1.0, ymin=-0.16, ymax=1.0,
                    clip_on=False, zorder=1)
         for xc, lab in ((2.5, "F I R S T   H A L F"), (8.5, "S E C O N D   H A L F")):
-            ax.text(xc, -0.16, lab, transform=ax.get_xaxis_transform(),
+            ax.text(xc, -0.13, lab, transform=ax.get_xaxis_transform(),
                     ha="center", va="top", fontsize=9, color="#6B7178",
                     fontweight="bold")
 
@@ -371,14 +411,17 @@ def _bar_buckets_pub(prod):
              "half and spikes in added time (red).",
              "A “live minute” counts only the time the ball is actually in play."],
             FOOTER)
-    _save(fig, "agg_02_productivity_by_bucket.png")
+    if side_pad_in is None:
+        _save(fig, out_name)
+    else:
+        _save_hpad(fig, out_name, side_pad_in, vert_pad_in=side_pad_in, border=border)
 
 
 # ------- agg_01: true stoppage-time estimate vs stoppage time actually played -------
-def _scatter_estimate_pub(sc):
+def _scatter_estimate_pub(sc, out_name="agg_01_scatter_estimate_vs_played.png",
+                          side_pad_in=None, border=False):
     played = sc["played_min"].to_numpy()
     est = sc["est_min"].to_numpy()
-    n = len(sc)
     above = est > played
     pct_above = above.mean()
     lim = max(played.max(), est.max()) + 1.5
@@ -428,7 +471,7 @@ def _scatter_estimate_pub(sc):
         ax.set_ylim(0, lim)
         ax.set_aspect("equal")
         ax.set_xlabel("Stoppage time actually played (minutes)", fontsize=11, labelpad=6)
-        ax.set_ylabel("True stoppage-time estimate (minutes)", fontsize=11, labelpad=6)
+        ax.set_ylabel("True stoppage time estimate (minutes)", fontsize=11, labelpad=6)
         ax.grid(color="#ECEEEF", lw=0.7, zorder=0)
         ax.set_axisbelow(True)
         for sp in ("top", "right"):
@@ -440,13 +483,17 @@ def _scatter_estimate_pub(sc):
                   "played 8.8 mins, and missing 8.8 mins." +
                   "\nSource: StatsBomb open data; author’s analysis, calibrated to "
                   "Nate Silver at r = 0.88, MAE = 1.77 mins")
+        subtitle = [f"Each dot is a match from the last six major tournaments. {pct_above:.0%} of matches ended too early (shown in red),",
+                    "with more stoppage owed than was actually played."]
         _titleblock(
             fig,
             "Stoppage time is under-awarded in 96% of matches",
-            [f"Each dot is one of {n} matches. {pct_above:.0%} of matches ended too early (shown in red),",
-             "with more stoppage owed than was actually played."],
+            subtitle,
             source, left_in=1.7)
-    _save(fig, "agg_01_scatter_estimate_vs_played.png")
+    if side_pad_in is None:
+        _save(fig, out_name)
+    else:
+        _save_hpad(fig, out_name, side_pad_in, vert_pad_in=side_pad_in, border=border)
 
 
 def small_multiples(d, plot_fn, metric_fn, fname, suptitle):
@@ -551,8 +598,20 @@ def main():
     _save(fig, "agg_01_scatter_lb_vs_played.png")
 
     _scatter_estimate_pub(d["scatter_est"])
+    # Same chart, same content size, just even breathing room on all four sides.
+    _scatter_estimate_pub(d["scatter_est"],
+                          out_name="agg_01_scatter_estimate_vs_played_wide.png",
+                          side_pad_in=0.3)
+    # Same wide chart, with a thin light-grey frame around the crop.
+    _scatter_estimate_pub(d["scatter_est"],
+                          out_name="agg_01_scatter_estimate_vs_played_wide_bordered.png",
+                          side_pad_in=0.3, border=True)
 
     _bar_buckets_pub(productivity_by_bucket(d, scope_ids(d, "all")))
+    # Same chart, with even margins on all four sides and a thin light-grey frame.
+    _bar_buckets_pub(productivity_by_bucket(d, scope_ids(d, "all")),
+                     out_name="agg_02_productivity_by_bucket_bordered.png",
+                     side_pad_in=0.3, border=True)
 
     fig, ax = plt.subplots(figsize=(5.5, 5.5))
     _shares(ax, two_h_shares(d, scope_ids(d, "all")), "All tournaments")

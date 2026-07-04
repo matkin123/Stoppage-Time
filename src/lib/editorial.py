@@ -51,6 +51,40 @@ def _renderer(fig):
         return FigureCanvasAgg(fig).get_renderer()
 
 
+def save_padded(fig, path, *, side_pad_in, vert_pad_in=None, border=False, dpi=130):
+    """Save `fig` cropped tight, then expanded by fixed whitespace: `side_pad_in` inches
+    on the left/right and `vert_pad_in` (defaults to `side_pad_in`) on top/bottom, and
+    close it.
+
+    savefig(bbox_inches="tight") crops to the outermost artists, so widening the figure
+    alone can't add margin — it gets trimmed. Instead we take the tight bbox (in inches)
+    and expand its extents, leaving all plotted content byte-identical.
+
+    If `border` is truthy, a thin light-grey frame is drawn just inside the padded crop.
+    Doing it in matplotlib is unreliable: savefig(bbox_inches=box) crops by translating
+    transFigure, but dpi_scale_trans (which figure-level artists use) is NOT translated,
+    so a rectangle drawn there lands at its absolute position, not the crop's.
+    Post-processing the PNG sits the frame exactly in the padded margin."""
+    from matplotlib.transforms import Bbox
+    if vert_pad_in is None:
+        vert_pad_in = side_pad_in
+    fig.canvas.draw()
+    bb = fig.get_tightbbox(_renderer(fig))  # inches
+    box = Bbox.from_extents(bb.x0 - side_pad_in, bb.y0 - vert_pad_in,
+                            bb.x1 + side_pad_in, bb.y1 + vert_pad_in)
+    fig.savefig(path, dpi=dpi, bbox_inches=box)
+    plt.close(fig)
+    if border:
+        from PIL import Image, ImageDraw
+        lw = 2  # px
+        off = lw // 2  # centre the stroke inside the image edge
+        img = Image.open(path).convert("RGB")
+        ImageDraw.Draw(img).rectangle(
+            [off, off, img.width - 1 - off, img.height - 1 - off],
+            outline=(204, 204, 204), width=lw)
+        img.save(path)
+
+
 def _wrap_to_px(fig, text, max_px, fontsize):
     """Greedily wrap `text` so each rendered line is no wider than `max_px` pixels."""
     r = _renderer(fig)

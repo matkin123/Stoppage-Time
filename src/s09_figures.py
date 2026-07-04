@@ -244,7 +244,16 @@ def fig_productivity_decay():
         ax.grid(color=editorial.GRID, lw=0.7, zorder=0)
         editorial.despine(ax, keep=("left", "bottom"))
 
-    return _save(fig, "f06_productivity_decay.png")
+    # f06 is saved exactly as _save would (dpi 130, tight) but without closing the fig,
+    # so the bordered variant can reuse it; save_padded closes it.
+    path = config.FIGURES / "f06_productivity_decay.png"
+    fig.savefig(path, dpi=130, bbox_inches="tight")
+    print(f"  wrote {path}")
+    # Same chart, with even margins on all four sides and a thin light-grey frame.
+    bordered = config.FIGURES / "f06_productivity_decay_bordered.png"
+    editorial.save_padded(fig, bordered, side_pad_in=0.3, border=True)
+    print(f"  wrote {bordered}")
+    return path
 
 
 def write_ledger(prod):
