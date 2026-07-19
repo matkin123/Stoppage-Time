@@ -12,8 +12,8 @@ def test_tournament_checksums_consistent():
     t = config.tournaments()
     pre = sum(x["expected_matches"] for x in t["tournaments"] if x["group"] == "PRE")
     post = sum(x["expected_matches"] for x in t["tournaments"] if x["group"] == "POST")
-    assert pre == t["group_checksums"]["PRE"] == 115
-    assert post == t["group_checksums"]["POST"] == 199
+    assert pre == t["group_checksums"]["PRE"] == 166
+    assert post == t["group_checksums"]["POST"] == 148
     assert pre + post == t["group_checksums"]["TOTAL"] == 314
 
 

@@ -1,19 +1,19 @@
 """Team-quality / Elo test of the outcome-flip 50/50 team-split (ANALYSIS ONLY; ADR-0034).
 
-Settles a reviewer objection to the outcome-flip secondary metric (locked 13.0% [11.3%, 15.1%],
-ADR-0031): *the team leading by one at 90' is on average the better team, so the trailing (worse)
+Settles a reviewer objection to the outcome-flip secondary metric (locked 12.1% [10.4%, 14.2%],
+ADR-0039): *the team leading by one at 90' is on average the better team, so the trailing (worse)
 team scores fewer than half the omitted-window goals -- `p_trail < 0.5` -- and P(flip) should be
-well below half of P(scoreline).* The headline SCORELINE (24.8%) is structurally immune (it rides
+well below half of P(scoreline).* The headline SCORELINE (23.3%) is structurally immune (it rides
 total mu, never attributes the scorer); only the flip's lead-by-1 branch uses the split.
 
 Two analyses:
   A. Exact state-decomposition of the locked flip -- how much of it is even `p_trail`-sensitive.
   B. Elo-conditioned `p_trail` -- explanatory power (logit), the crossover, the p_trail x mu
-     covariance, and a re-weighted flip band vs the locked 13.0%.
+     covariance, and a re-weighted flip band vs the locked 12.1%.
 
 READS production parquet + cached eloratings.net histories (data/raw/elo, see src/fetch_elo.py).
 Writes ONLY docs/team_quality_flip_test.md. Touches no processed parquet, no s08 grid, no figure,
-no params (pattern: src/flip_split_sensitivity.py; guardrail: CLAUDE.md sec 6 + ADR-0031 lock).
+no params (pattern: src/flip_split_sensitivity.py; guardrail: CLAUDE.md sec 6 + ADR-0035 lock).
 
 Run: python -m src.team_quality_flip
 """
@@ -246,10 +246,10 @@ def write_report(A, B):
       "trailing side should score **fewer** than half the omitted-window goals (`p_trail < 0.5`) and "
       "P(flip) should fall well below half of P(scoreline). Standalone check: READS production "
       "parquet + cached World Football Elo (eloratings.net); no locked artifact touched. The "
-      "**headline scoreline 24.8% is structurally immune** -- it rides total `mu` and never "
+      "**headline scoreline 23.3% is structurally immune** -- it rides total `mu` and never "
       "attributes the scorer; only the flip's `lead_by_1` branch (`p_change(mu/2)`) uses the split.")
     P("")
-    P("## Analysis A -- exact state-decomposition of the locked 13.0% flip")
+    P("## Analysis A -- exact state-decomposition of the locked 12.1% flip")
     P("")
     P(f"Faithfulness gate: rebuilding the flip from per-match `mu = -ln(1 - p_change)` on the central "
       f"knob reproduces the locked `pct_outcome_flip` = **{A['locked']:.5f}** "
@@ -270,7 +270,7 @@ def write_report(A, B):
       f"most the {A['Y']*100:.2f} pp lead_by_1 mass.")
     P(f"- **Tied-only floor:** even at `p_trail = 0` (leader scores *every* lead_by_1 omitted goal -- "
       f"absurd), the flip cannot fall below **{A['X']*100:.2f}%** = **{A['tied_floor_of_scoreline']*100:.1f}%** "
-      f"of the 24.8% scoreline (the {A['n_tied']}/{A['N']} = {A['floor_frac_matches']*100:.1f}% tied share).")
+      f"of the 23.3% scoreline (the {A['n_tied']}/{A['N']} = {A['floor_frac_matches']*100:.1f}% tied share).")
     P(f"- **`flip / scoreline` = {A['flip_over_scoreline']:.3f}** is a state-census identity, not a "
       f"`p_trail` artifact: the {A['n_lead2']} unflippable lead_by_2plus matches do more to hold the "
       f"ratio near half than `p_trail` ever could.")
@@ -351,7 +351,7 @@ def write_report(A, B):
     P(f"Every Elo-informed re-weight lands within **[{lo_e*100:.2f}%, {hi_e*100:.2f}%]** (the flat "
       f"0.40/0.60 rows are the mechanical leverage bounds, not Elo-implied) and the largest move of "
       f"an Elo-conditioned variant is **{move*100:.2f} pp** -- inside the locked flip CI "
-      f"[11.3%, 15.1%] and below the 0.5 pp threshold that would trigger an s08 sensitivity row.")
+      f"[10.4%, 14.2%] and below the 0.5 pp threshold that would trigger an s08 sensitivity row.")
     P("")
     P("## Conclusion")
     P("")
@@ -362,8 +362,9 @@ def write_report(A, B):
       f"holds it at {A['tied_floor_of_scoreline']*100:.0f}% of scoreline; (2) the *realized* "
       f"`p_trail` -- observed scorers, chase included -- is **at/above 0.5** (0.509 all / 0.548 2H "
       f"stoppage), so the net late-game effect runs opposite to the objection; (3) the `Delta x mu` "
-      f"covariance is ~0 and mu-weighting nudges `p_trail` up. **Keep `p_trail = 0.5`; flip 13.0% "
-      f"LOCK UNCHANGED.** README: no change needed (the 0.548 split pre-empt already stands).")
+      f"covariance is ~0 and mu-weighting nudges `p_trail` up. **Keep `p_trail = 0.5`; the 50/50 "
+      f"split is non-load-bearing** (the flip's ADR-0039 value 12.1% comes from the owed re-estimate, "
+      f"not this split -- the split conclusion is unchanged by the re-lock).")
     P("")
     P("_Reproduce: `python -m src.fetch_elo` then `python -m src.team_quality_flip`. Faithfulness "
       f"gate: flip(0.5) reproduces locked {A['locked']:.5f} to <1e-6._")

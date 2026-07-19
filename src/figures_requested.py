@@ -31,12 +31,12 @@ from src.lib import config, editorial, stats
 
 OUT = config.FIGURES / "requested"
 
-# Tournament display order: PRE first, then POST.
+# Tournament display order: ingest/calendar order.
 TOURNEYS = [
     ("wc_2018", "World Cup 2018 (PRE)"),
     ("euro_2020", "Euro 2020 (PRE)"),
     ("wc_2022", "World Cup 2022 (POST)"),
-    ("euro_2024", "Euro 2024 (POST)"),
+    ("euro_2024", "Euro 2024 (PRE)"),
     ("copa_america_2024", "Copa America 2024 (POST)"),
     ("afcon_2023", "AFCON 2023 (POST)"),
 ]
@@ -278,14 +278,14 @@ def _deadpct(ax, dp, title):
             ax.text(i, v, f"{v:.1%}", ha="center", va="bottom", fontsize=7)
 
 
-def _save(fig, name):
-    path = OUT / name
+def _save(fig, name, out_dir=None):
+    path = (out_dir or OUT) / name
     fig.savefig(path, dpi=130, bbox_inches="tight")
     plt.close(fig)
     print(f"  wrote {path}")
 
 
-def _save_hpad(fig, name, side_pad_in, vert_pad_in=0.1, border=False):
+def _save_hpad(fig, name, side_pad_in, vert_pad_in=0.1, border=False, out_dir=None):
     """Like _save but adds fixed whitespace around the tight crop: `side_pad_in` inches
     on the left/right and `vert_pad_in` inches on the top/bottom.
 
@@ -304,7 +304,7 @@ def _save_hpad(fig, name, side_pad_in, vert_pad_in=0.1, border=False):
     bb = fig.get_tightbbox(r)  # inches
     box = Bbox.from_extents(bb.x0 - side_pad_in, bb.y0 - vert_pad_in,
                             bb.x1 + side_pad_in, bb.y1 + vert_pad_in)
-    path = OUT / name
+    path = (out_dir or OUT) / name
     fig.savefig(path, dpi=130, bbox_inches=box)
     plt.close(fig)
     # Draw the frame on the finished crop. Doing it in matplotlib is unreliable here:
@@ -336,6 +336,7 @@ NEUTRAL = editorial.NEUTRAL
 NEUTRAL_PT = editorial.NEUTRAL_PT
 INK = editorial.INK
 SUBINK = editorial.SUBINK
+REF = editorial.REF
 FOOTER = editorial.FOOTER
 _titleblock = editorial.titleblock
 
@@ -350,18 +351,21 @@ BUCKET_PUB = {
 
 
 def _bar_buckets_pub(prod, out_name="agg_02_productivity_by_bucket.png",
-                     side_pad_in=None, border=False):
+                     side_pad_in=None, border=False, *, title=None, subtitle=None,
+                     source=None, out_dir=None, hilite_labels=None, annotation=None):
+    if hilite_labels is None:
+        hilite_labels = STOPPAGE_LABELS
     prod = prod.set_index("bucket").reindex(BUCKET_ORDER).reset_index()
     reg = prod[~prod["bucket"].isin(STOPPAGE_LABELS)]
     baseline = reg["goals"].sum() / reg["live_min"].sum()
     rates = prod["rate"].to_numpy()
-    is_stop = prod["bucket"].isin(STOPPAGE_LABELS).to_numpy()
+    is_hilite = prod["bucket"].isin(hilite_labels).to_numpy()
 
     with plt.rc_context(PUB_RC):
         fig = plt.figure(figsize=(10.2, 6.4))
         ax = fig.add_axes([0.085, 0.205, 0.885, 0.545])
         x = np.arange(len(prod))
-        colors = [HILITE if s else NEUTRAL for s in is_stop]
+        colors = [HILITE if s else NEUTRAL for s in is_hilite]
         ax.bar(x, rates, color=colors, width=0.78, zorder=3)
 
         # regular-play average reference line (label parked over the short early bars)
@@ -369,16 +373,18 @@ def _bar_buckets_pub(prod, out_name="agg_02_productivity_by_bucket.png",
         ax.text(-0.35, baseline + 0.0016, "Regular-play average",
                 ha="left", va="bottom", fontsize=8.5, color="#6B7178", style="italic")
 
-        # value labels on the two highlighted (added-time) bars
-        for xi, r, s in zip(x, rates, is_stop):
+        # value labels on the highlighted bar(s)
+        for xi, r, s in zip(x, rates, is_hilite):
             if s:
                 ax.text(xi, r + 0.0016, f"{r:.3f}", ha="center", va="bottom",
                         fontsize=9, fontweight="bold", color=HILITE)
 
         # hero insight annotation -> tip lands just left of the "0.082" data label,
         # vertically centred on it and above the red bar
+        if annotation is None:
+            annotation = "Goals come nearly twice as fast\nin second-half added time"
         ax.annotate(
-            "Goals come nearly twice as fast\nin second-half added time",
+            annotation,
             xy=(10.5, rates[-1] + 0.0033), xytext=(7.3, rates[-1] * 0.93),
             ha="center", va="top", fontsize=10, color=INK, fontweight="bold",
             arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.2,
@@ -404,44 +410,54 @@ def _bar_buckets_pub(prod, out_name="agg_02_productivity_by_bucket.png",
                     ha="center", va="top", fontsize=9, color="#6B7178",
                     fontweight="bold")
 
-        _titleblock(
-            fig,
-            "Goal scoring increases dramatically in stoppage time",
-            ["Goals per live minute by stage of the match. Scoring climbs through each "
-             "half and spikes in added time (red).",
-             "A “live minute” counts only the time the ball is actually in play."],
-            FOOTER)
+        if title is None:
+            title = "Goal scoring increases dramatically in stoppage time"
+        if subtitle is None:
+            subtitle = ["Goals per live minute by stage of the match. Scoring climbs "
+                        "through each half and spikes in added time (red).",
+                        "A “live minute” counts only the time the ball is actually in play."]
+        if source is None:
+            source = FOOTER
+        _titleblock(fig, title, subtitle, source)
     if side_pad_in is None:
-        _save(fig, out_name)
+        _save(fig, out_name, out_dir=out_dir)
     else:
-        _save_hpad(fig, out_name, side_pad_in, vert_pad_in=side_pad_in, border=border)
+        _save_hpad(fig, out_name, side_pad_in, vert_pad_in=side_pad_in, border=border,
+                   out_dir=out_dir)
 
 
 # ------- agg_01: true stoppage-time estimate vs stoppage time actually played -------
 def _scatter_estimate_pub(sc, out_name="agg_01_scatter_estimate_vs_played.png",
-                          side_pad_in=None, border=False):
+                          side_pad_in=None, border=False, *, title=None, subtitle=None,
+                          source=None, out_dir=None, ax_dx=0.0, marker_arrowstyle="-"):
     played = sc["played_min"].to_numpy()
     est = sc["est_min"].to_numpy()
     above = est > played
     pct_above = above.mean()
     lim = max(played.max(), est.max()) + 1.5
-    med_played, med_est = float(np.median(played)), float(np.median(est))
+    med_played = float(np.median(played))
+    # Typical-marker owed = median played + median per-match gap, so the marker's
+    # height above the identity line is the median OMITTED stoppage. Using the raw
+    # median owed instead would overstate the gap (median owed - median played !=
+    # median of per-match differences).
+    med_est = med_played + float(np.median(est - played))
 
     with plt.rc_context(PUB_RC):
         # Wide canvas for side whitespace: the plot is a square and height-limited,
         # so the extra width does NOT change its physical size — it just becomes
         # margin, and the symmetric box + anchor "N" keep the plot centred.
         fig = plt.figure(figsize=(11.4, 8.92))
-        ax = fig.add_axes([0.10, 0.153, 0.80, 0.653])
+        ax = fig.add_axes([0.10 + ax_dx, 0.153, 0.80, 0.653])
         ax.set_anchor("N")
 
         # identity (fairness) line
         ax.plot([0, lim], [0, lim], color="#3C4043", lw=1.3, zorder=2)
-        # points: red above the line (cut short), grey below (played extra)
+        # points: red above the line (cut short), grey below (played extra).
+        # Regular-time and extra-time matches are shown identically (noted in footer).
         ax.scatter(played[above], est[above], s=20, color=HILITE, alpha=0.55,
                    linewidths=0, zorder=3)
-        ax.scatter(played[~above], est[~above], s=20, color=NEUTRAL_PT, alpha=0.7,
-                   linewidths=0, zorder=3)
+        ax.scatter(played[~above], est[~above], s=20, color=NEUTRAL_PT,
+                   alpha=0.7, linewidths=0, zorder=3)
 
         # "typical match" marker -> the ~2x story, made concrete
         ax.scatter([med_played], [med_est], s=95, color=INK, marker="D",
@@ -450,7 +466,7 @@ def _scatter_estimate_pub(sc, out_name="agg_01_scatter_estimate_vs_played.png",
             f"Typical match\n~{med_played:.0f} min played,\n~{med_est:.0f} min owed",
             xy=(med_played, med_est), xytext=(med_played + 12.5, med_est - 5.5),
             fontsize=9.5, color=INK, ha="left", va="top",
-            arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.1,
+            arrowprops=dict(arrowstyle=marker_arrowstyle, color=INK, lw=1.1,
                             connectionstyle="arc3,rad=0.2"))
 
         # inline label for the diagonal (replaces the legend)
@@ -478,22 +494,29 @@ def _scatter_estimate_pub(sc, out_name="agg_01_scatter_estimate_vs_played.png",
             ax.spines[sp].set_visible(False)
         ax.tick_params(length=0, labelsize=9.5)
 
-        source = (FOOTER.split("\n")[0] +
-                  "\n“Typical” is the median. Mean values are: stoppage owed 17.6 mins, "
-                  "played 8.8 mins, and missing 8.8 mins." +
-                  "\nSource: StatsBomb open data; author’s analysis, calibrated to "
-                  "Nate Silver at r = 0.88, MAE = 1.77 mins")
-        subtitle = [f"Each dot is a match from the last six major tournaments. {pct_above:.0%} of matches ended too early (shown in red),",
-                    "with more stoppage owed than was actually played."]
-        _titleblock(
-            fig,
-            "Stoppage time is under-awarded in 96% of matches",
-            subtitle,
-            source, left_in=1.7)
+        if source is None:
+            # Footer means track the current lock (ADR-0039): owed 17.0 / played 8.8 /
+            # missing 8.2 kept as a consistent trio (17.0-8.8=8.2) matching the article's
+            # stated owed 17.0 & omitted 8.2; r/MAE read from params so they never drift.
+            p = config.params()["silent"]
+            source = (FOOTER.split("\n")[0] +
+                      "\n“Typical” is the median. Mean values are: stoppage owed 17.0 mins, "
+                      "played 8.8 mins, and missing 8.2 mins." +
+                      "\nData includes both regular-time and extra-time matches." +
+                      "\nSource: StatsBomb open data; author’s analysis, calibrated to "
+                      f"Nate Silver at r = {p['estimator_pearson_r']:.2f}, "
+                      f"MAE = {p['estimator_mae_min']:.2f} mins")
+        if subtitle is None:
+            subtitle = [f"Each dot is a match from the last six major tournaments. {pct_above:.0%} of matches ended too early (shown in red),",
+                        "with more stoppage owed than was actually played."]
+        if title is None:
+            title = f"Stoppage time is under-awarded in {pct_above:.0%} of matches"
+        _titleblock(fig, title, subtitle, source, left_in=1.7)
     if side_pad_in is None:
-        _save(fig, out_name)
+        _save(fig, out_name, out_dir=out_dir)
     else:
-        _save_hpad(fig, out_name, side_pad_in, vert_pad_in=side_pad_in, border=border)
+        _save_hpad(fig, out_name, side_pad_in, vert_pad_in=side_pad_in, border=border,
+                   out_dir=out_dir)
 
 
 def small_multiples(d, plot_fn, metric_fn, fname, suptitle):
@@ -598,11 +621,7 @@ def main():
     _save(fig, "agg_01_scatter_lb_vs_played.png")
 
     _scatter_estimate_pub(d["scatter_est"])
-    # Same chart, same content size, just even breathing room on all four sides.
-    _scatter_estimate_pub(d["scatter_est"],
-                          out_name="agg_01_scatter_estimate_vs_played_wide.png",
-                          side_pad_in=0.3)
-    # Same wide chart, with a thin light-grey frame around the crop.
+    # Same chart, same content size, even breathing room + a thin light-grey frame.
     _scatter_estimate_pub(d["scatter_est"],
                           out_name="agg_01_scatter_estimate_vs_played_wide_bordered.png",
                           side_pad_in=0.3, border=True)

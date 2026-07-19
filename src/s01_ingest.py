@@ -6,7 +6,7 @@ s02 (parse -> parquet -> delete) to respect the tight disk budget. We never clon
 open-data repo and we never touch 360 data.
 
 Out: raw/statsbomb/matches_<key>.json (immutable cache), interim/matches.parquet
-Gate: match counts per competition equal the tournaments.yaml checksums (115 / 199).
+Gate: match counts per competition equal the tournaments.yaml checksums (166 / 148).
 """
 from __future__ import annotations
 

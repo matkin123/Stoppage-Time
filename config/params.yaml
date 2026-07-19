@@ -55,24 +55,26 @@ silent:
     - "Pick-up"
   # Residual-silent constant: the irreducible unmarked-but-addable remainder left after
   # marker-gating, FIT ON 2018 (mean Nate `expected` - mean(lower_bound + marked_silent)
-  # over the 32 WC2018 matches = 13.160 - 12.757 min). RE-FIT in IMPL-5 (ADR-0017): adding
-  # restart_excess to lower_bound raised the mean, shrinking the residual 114.0 -> 24.2s.
-  # FROZEN; applied per-match to all six tournaments (POST has no ground truth to fit on).
-  # ADR-0030: this is now the POST / full-gap value (directive era keeps the full goal-celebration
-  # credit, so its residual is unchanged). PRE uses residual_silent_pre_s below.
-  residual_silent_s: 24.2        # POST (directive era, full-gap celebration) -- unchanged
-  # PRE (pre-2022) residual (ADR-0030). The PRE celebration credit dropped to the EXCESS over
-  # celebration_normal_s (60s), so the PRE-2018 mean fell and the residual rises to re-anchor it to
-  # Nate `expected` (13.160 min). RE-FIT on the 32 WC2018 matches: mean(Nate expected) -
-  # mean(lower_bound + silent_marked) = 94.09s. FROZEN; applied to all PRE matches (WC2018 + Euro2020).
-  residual_silent_pre_s: 94.1    # PRE (pre-directive), celebration credited as excess; re-fit on WC2018
+  # over the 32 WC2018 matches). RE-FIT in IMPL-5 (ADR-0017: 114.0 -> 24.2s after restart_excess).
+  # ADR-0039: injury windows now end at the next in-play segment start (next live ball), not the
+  # inconsistently-logged Referee Ball-Drop. This relocates WC2018 injury stoppage out of the
+  # residual and into the marked pieces, so the POST (full-gap celebration) re-fit goes NEGATIVE
+  # (-47.7s) -- an incoherent "irreducible remainder" (a claw-back, not a leftover-to-add) -- and is
+  # FLOORED AT 0 (D2). FROZEN; applied per-match to all POST matches (no POST ground truth to fit on).
+  residual_silent_s: 0.0         # POST (full-gap celebration); ADR-0039 floored at 0 (refit -47.7s)
+  # PRE (pre-2022) residual (ADR-0030). The PRE celebration credit is the EXCESS over
+  # celebration_normal_s (60s), so the PRE-2018 marked total is smaller and the residual larger.
+  # RE-FIT on the 32 WC2018 matches: mean(Nate expected) - mean(lower_bound + silent_marked).
+  # ADR-0030 fit 94.09s; ADR-0039 re-fit under the inplay injury rule = 25.9s (positive, kept as-is).
+  # FROZEN; applied to all PRE matches (WC2018 + Euro2020 + Euro2024).
+  residual_silent_pre_s: 25.9    # PRE (pre-directive), celebration credited as excess; ADR-0039 re-fit on WC2018
   # Estimator validation residuals on the 32 WC2018 matches (full-match totals vs Nate
-  # `expected`). Re-fit in IMPL-5 (ADR-0017) after adding restart_excess (r 0.768->0.825, MAE
-  # 2.75->2.44), then in ADR-0030 after the PRE celebration allowance (r 0.825->0.875, MAE
-  # 2.44->1.77; WC2018 is all PRE so this is the PRE estimator). IMPL-4 uses estimator_mae_min as
-  # the per-match sigma when propagating estimator uncertainty into the X% confidence band.
-  estimator_pearson_r: 0.875
-  estimator_mae_min: 1.77
+  # `expected`). Re-fit IMPL-5 (ADR-0017: r 0.768->0.825), ADR-0030 (PRE celebration: r 0.825->0.875,
+  # MAE 2.44->1.77), ADR-0039 (inplay injury pairing: r 0.875->0.870, MAE 1.77->1.67 -- MAE improves).
+  # IMPL-4 uses estimator_mae_min as the per-match sigma when propagating estimator uncertainty into
+  # the X% confidence band.
+  estimator_pearson_r: 0.870
+  estimator_mae_min: 1.67
 
 phases:
   # Stoppage threshold in WITHIN-PERIOD seconds: period_s >= 2700 means past 45:00 in a

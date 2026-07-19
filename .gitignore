@@ -13,6 +13,10 @@ figures/**
 !data/raw/nate_2018/
 !data/raw/nate_2018/nate_wc2018.csv
 
+# Sky / Opta WC2026 workbook — DO NOT COMMIT OR SHARE (partner-supplied, confidential).
+# Lives directly under data/ so it is not covered by the data/{raw,interim,processed} rules.
+data/DONOTSHARE*.xlsx
+
 # Python
 .venv/
 __pycache__/

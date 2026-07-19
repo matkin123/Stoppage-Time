@@ -1,6 +1,8 @@
 # Headline X% sensitivity to the BIP threshold (standalone, locked tables untouched)
 
-Re-runs s03->s07->s08 at each `max_live_gap_s` and reads the CENTRAL spec (`silent_marked|overall|pooled_all|hl=4.0|on`, window 1H+2H). Central 20s row matches the locked ADR-0025 headline.
+Re-runs s03->s07->s08 at each `max_live_gap_s` and reads the CENTRAL spec (`silent_marked|overall|pooled_all|hl=4.0|on`, window 1H+2H).
+
+> **Historical snapshot — computed against the original ADR-0025 tournament pools (Euro 2024 in POST).** The absolute level below (central 20s → 23.61%) reproduces the ADR-0025 headline (23.6%) and is deliberately NOT re-run. The headline has since been re-locked to **24.8% (ADR-0031)** and **24.4% (ADR-0035, Euro 2024 → PRE)**, but the *finding* this exhibit establishes — the BIP threshold moves X% by ≤0.10 pp across the in-tolerance band — is pool- and level-independent, because `mu ≈ lambda × omitted_live = G × D / T` cancels the live-minutes (see closing paragraph). Read the columns below as the *shape* of the sensitivity, not the current lock; add ~+0.8 pp to map the level onto ADR-0035.
 
 | max_live_gap | gate | both anchors ±90s | scoreline X% | 95% CI | Δ vs 20s (pp) | flip X% |
 |---|---|---|---|---|---|---|

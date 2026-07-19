@@ -1,8 +1,8 @@
 """Outcome-flip 50/50 team-split: empirical validation + leverage (ANALYSIS ONLY; ADR-0032).
 
-The outcome-flip secondary metric (s08 `outcome_flip`, 13.0% locked ADR-0031) needs to attribute
+The outcome-flip secondary metric (s08 `outcome_flip`, 12.1% locked ADR-0039) needs to attribute
 omitted-time goals to a specific team -- the flip only happens if the TRAILING side scores. The
-headline SCORELINE metric (24.8%) does not: it asks ">=1 extra goal by either team" and uses the
+headline SCORELINE metric (23.3%) does not: it asks ">=1 extra goal by either team" and uses the
 total Poisson mean mu, so it is indifferent to who scores. The flip handles the attribution with one
 assumption:
 
@@ -26,7 +26,7 @@ p_trail. HARNESS CHECK: p_trail=0.5 must reproduce the locked pct_outcome_flip t
 
 Standalone, NOT a stage, NOT a gate, NOT a lock. READS production parquet; writes only a small report
 (print + docs/flip_split_sensitivity.md). Touches NO processed parquet, NO s08 grid, NO figure, NO
-params (pattern: src/method2_samehalf.py; guardrail: ADR-0031 lock + CLAUDE.md sec 6).
+params (pattern: src/method2_samehalf.py; guardrail: ADR-0035 lock + CLAUDE.md sec 6).
 
 Run: python -m src.flip_split_sensitivity
 """
@@ -123,10 +123,10 @@ def main() -> None:
     L.append("# Outcome-flip 50/50 team-split: empirical validation + leverage")
     L.append("")
     L.append("Standalone check of the one assumption in the **outcome-flip** secondary metric (s08 "
-             "`outcome_flip`, locked 13.0% / ADR-0031): when a team leads by one at 90', the flip "
+             "`outcome_flip`, locked 12.1% / ADR-0039): when a team leads by one at 90', the flip "
              "credits the trailing team with a fixed **half** of the total omitted-time goals "
              "(`P = 1 - exp(-mu * p_trail)`, `p_trail = 0.5`). The **headline scoreline** metric "
-             "(24.8%) does NOT use this split -- it asks '>=1 extra goal by either team' and rides "
+             "(23.3%) does NOT use this split -- it asks '>=1 extra goal by either team' and rides "
              "the total `mu`, so nothing below can move it. READS production parquet; no locked "
              "artifact touched.")
     L.append("")
@@ -184,7 +184,7 @@ def main() -> None:
              f"but because the measured value is so near 0.5, leverage is small: the most-relevant "
              f"point estimate (0.548) moves the flip just **+{(f_2h - repro) * 100:.1f} pp to "
              f"~{f_2h * 100:.1f}%**, and the full p_trail in [0.40, 0.60] span is only "
-             f"{f_lo * 100:.1f}%-{f_hi * 100:.1f}%. The headline scoreline (24.8%) is unaffected at "
+             f"{f_lo * 100:.1f}%-{f_hi * 100:.1f}%. The headline scoreline (23.3%) is unaffected at "
              f"every value.")
     L.append("")
     L.append("## 3. Conclusion (for the methods record / a pre-empt)")
@@ -196,7 +196,7 @@ def main() -> None:
              f"The honest caveat is sample size: n={two_h['n']} in the cleanest cut cannot "
              f"statistically distinguish 0.50 from 0.55, so 0.5 is both defensible and unresolvable "
              f"to finer precision. If a single best-supported value is preferred over the round "
-             f"number, the added-time-specific {two_h['p']:.3f} nudges the flip from 13.0% to "
+             f"number, the added-time-specific {two_h['p']:.3f} nudges the flip from 12.1% to"
              f"~{f_2h * 100:.1f}% -- inside the CI either way.")
     L.append("")
     L.append("_Reproduce: `python -m src.flip_split_sensitivity`. Harness check: p_trail=0.5 "

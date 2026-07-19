@@ -17,7 +17,7 @@ I calibrate the estimator against the one independent ground truth that exists: 
 
 ![](../figures/f07_nate_calibration.png)
 
-Stoppage *played* is the easy half — whistle-to-whistle added time, read straight off the event clock — and my played clock matches his almost exactly (r = 0.992). That near-exact match is what makes the owed estimate believable: Nate, with a stopwatch and no access to this pipeline, found the same shortfall (r = 0.875, average error 1.77 minutes). Across the 314 matches, owed stoppage averages about 17.6 minutes a match and played stoppage about 8.9, leaving roughly 8.8 omitted minutes, positive in 97% of matches.
+Stoppage *played* is the easy half — whistle-to-whistle added time, read straight off the event clock — and my played clock matches his almost exactly (r = 0.992). That near-exact match is what makes the owed estimate believable: Nate, with a stopwatch and no access to this pipeline, found the same shortfall (r = 0.870, average error 1.67 minutes). Across the 314 matches, owed stoppage averages about 17.0 minutes a match and played stoppage about 8.9, leaving roughly 8.2 omitted minutes, positive in 95% of matches.
 
 **Changes to the stoppage time rules in 2022:** FIFA directed referees to add all time-wasting. The biggest change was to add *all* of a goal celebration to stoppage, rather than the perceived "excess" of one.[^1]
 
@@ -74,23 +74,23 @@ So the rate decays. No omitted second-half minute is priced at the raw peak. Eac
 
 ![](../figures/f06_productivity_decay.png)
 
-The whole decay band runs from 23.3% (fastest decay) to 26.1% (slowest), under three points around the 24.8% headline.
+The whole decay band runs from 22.0% (fastest decay) to 24.5% (slowest), under three points around the 23.3% headline.
 
-**What happened when stoppage time actually increased substantially overnight, and what it means for the assumption of decay.** When the directive roughly doubled added time, the per-minute scoring rate in those minutes barely moved: PRE second-half stoppage ran 0.086 (24 goals / 279 live-minutes), POST 0.080 (49 goals / 615 live-minutes), with more than twice the live stoppage minutes. If the extra minutes were mostly teams running out a decided game, the rate would have cratered. It held. That is the tell that stoppage time is not just ordinary football with the clock still running. Being in it is psychologically different, and the urgency it manufactures would not exist in a stopped-clock version of the same match. So the truth sits nearer the top of the model's band than the bottom.
+**What happened when stoppage time actually increased substantially overnight, and what it means for the assumption of decay.** When the directive roughly doubled added time, the per-minute scoring rate in those minutes moved only modestly: PRE second-half stoppage ran 0.089 (37 goals / 415 live-minutes), POST 0.075 (36 goals / 479 live-minutes), even as per-match stoppage climbed from about 7 to 11 minutes. If the extra minutes were mostly teams running out a decided game, the rate would have cratered toward the open-play floor. It didn't. That is the tell that stoppage time is not just ordinary football with the clock still running. Being in it is psychologically different, and the urgency it manufactures would not exist in a stopped-clock version of the same match. So the truth sits nearer the top of the model's band than the bottom.
 
 Now the confound, honestly. Part of why post-directive productivity stayed high is composition, not psychology. In POST matches fewer minutes were live by the 90th, because regulation wasting rose once teams learned time gets topped up later, so more of each match slid into stoppage. And the later minutes of a foreshortened live set are the most productive minutes there are. Some of the stoppage premium is therefore just "these are late minutes of a shortened game," which is exactly the endogeneity the decay and the open-play floor already discount. The honest reading: the premium is partly real urgency and partly selection, the model prices both down toward open play, and the answer barely moves either way.
 
 **Objection 2: The high rate is just trailing teams chasing a level scoreline.**
 
-When a side trails late it throws bodies forward, so maybe the premium is only desperate, level matches. If so, it would collapse when the game is not close. It doesn't. Second-half stoppage scores at about the same rate whether the game is level at 90 (0.0886) or not (0.0786), with heavily overlapping intervals. Conditioning the entire model on score state at 90 barely moves the headline, from 24.8% to 24.5%.
+When a side trails late it throws bodies forward, so maybe the premium is only desperate, level matches. If so, it would collapse when the game is not close. It doesn't. Second-half stoppage scores at about the same rate whether the game is level at 90 (0.0886) or not (0.0786), with heavily overlapping intervals. Conditioning the entire model on score state at 90 barely moves the headline, from 23.3% to 23.1%.
 
 **Objection 3: The high rate is a knockout-stage effect.**
 
-Maybe the late rate is inflated by win-or-go-home stakes. It isn't. Split the same window by match type: group stage 0.0847 (56 goals / 660.8 live-minutes) against elimination 0.0727 (17 goals / 233.7 live-minutes), the point estimate actually leaning *higher* in the group stage (rate ratio 1.17, binomial p = 0.69). There is no separate elimination effect to price. Carried all the way through the model, sourcing every match's rate from the group stage alone lands the headline at 25.9% and from the knockouts alone at 21.5% — both inside the envelope, with the all-matches central at 24.8%.
+Maybe the late rate is inflated by win-or-go-home stakes. It isn't. Split the same window by match type: group stage 0.0847 (56 goals / 660.8 live-minutes) against elimination 0.0727 (17 goals / 233.7 live-minutes), the point estimate actually leaning *higher* in the group stage (rate ratio 1.17, binomial p = 0.69). There is no separate elimination effect to price. Carried all the way through the model, sourcing every match's rate from the group stage alone lands the headline at 24.4% and from the knockouts alone at 20.1% — both inside the envelope, with the all-matches central at 23.3%.
 
 **Objection 4: The result figure assumes a goal is equally likely to fall to either team.**
 
-When a team leads by one at 90, the result flips only if the trailing side scores, and the chasing team scores more often than the leader, so a flat 50/50 split should understate flips. The model does split omitted-time goals 50/50. Measured in the data, the trailing team takes 0.548 of the goals scored in lead-by-one stoppage situations (n = 31, interval spanning 0.5). Sweeping that split across the whole plausible range, 0.40 to 0.60, moves the result figure only between 12.0% and 13.9%, and leaves the scoreline headline untouched, because the scoreline asks for any extra goal by either side and never uses the split.
+When a team leads by one at 90, the result flips only if the trailing side scores, and the chasing team scores more often than the leader, so a flat 50/50 split should understate flips. The model does split omitted-time goals 50/50. Measured in the data, the trailing team takes 0.548 of the goals scored in lead-by-one stoppage situations (n = 31, interval spanning 0.5). Sweeping that split across the whole plausible range, 0.40 to 0.60, moves the result figure only between 11.2% and 12.9%, and leaves the scoreline headline untouched, because the scoreline asks for any extra goal by either side and never uses the split.
 
 ## Results and sensitivity
 
@@ -98,27 +98,27 @@ The whole result on one page.
 
 | Quantity | Value |
 |---|---|
-| **Headline — different scoreline (central)** | **24.8%** |
-| 95% bootstrap confidence interval (sampling) | **[21.7%, 28.6%]** |
-| Lead band — one modeling choice varied at a time | **21.4% – 27.3%** |
-| Full envelope — all modeling choices varied jointly | **18.9% – 28.6%** |
-| **Different *result*** — winner/draw actually changes | **13.0% [11.3%, 15.1%]** |
-| Second-half-only variant (comparison, not the headline) | 17.0% [15.0%, 19.5%] |
+| **Headline — different scoreline (central)** | **23.3%** |
+| 95% bootstrap confidence interval (sampling) | **[20.1%, 27.3%]** |
+| Lead band — one modeling choice varied at a time | **20.2% – 25.6%** |
+| Full envelope — all modeling choices varied jointly | **17.3% – 27.0%** |
+| **Different *result*** — winner/draw actually changes | **12.1% [10.4%, 14.2%]** |
+| Second-half-only variant (comparison, not the headline) | 15.8% [13.8%, 18.3%] |
 
-Two kinds of uncertainty, kept apart. *Sampling* uncertainty is the bootstrap CI **[21.7%, 28.6%]** (width 6.9 points): over 1,000 draws, each goal-rate cell is redrawn from a Jeffreys–Gamma posterior and a shared owed-stoppage estimator error is split across the two halves. *Specification* uncertainty is how the headline moves as defensible modeling choices change, one at a time (the 21.4–27.3% band) or all jointly (the 18.9–28.6% envelope).
+Two kinds of uncertainty, kept apart. *Sampling* uncertainty is the bootstrap CI **[20.1%, 27.3%]** (width 7.1 points): over 1,000 draws, each goal-rate cell is redrawn from a Jeffreys–Gamma posterior and a shared owed-stoppage estimator error is split across the two halves. *Specification* uncertainty is how the headline moves as defensible modeling choices change, one at a time (the 20.2–25.6% band) or all jointly (the 17.3–27.0% envelope).
 
 | Modeling choice | Levels → X% | Spread |
 |---|---|---|
-| **Decay half-life** | h=2 23.3 · **h=4 24.8** · h=8 26.1 | ~2.8 pts |
-| **Score at 90** (conditioning) | overall **24.8** · split by tied/not-tied 24.5 | ~0.3 pts |
-| **Knockout vs group stage** | all matches **24.8** · group stage 25.9 · knockout 21.5 | ~4.4 pts |
-| **λ source** (PRE vs POST) | all-pooled **24.8** · POST-only 23.7 · regime-matched 24.9 · PRE-only 27.3 | ~3.5 pts |
-| **Gross-up** (in-stoppage wasting) | off 21.4 → **on 24.8** → geometric 26.0 | ~4.6 pts |
-| One-at-a-time band | **21.4% – 27.3%** | 5.9 pts ≈ 0.9× sampling |
-| Full **joint** envelope | **18.9% – 28.6%** | 9.7 pts ≈ 1.4× sampling |
+| **Decay half-life** | h=2 22.0 · **h=4 23.3** · h=8 24.5 | ~2.5 pts |
+| **Score at 90** (conditioning) | overall **23.3** · split by tied/not-tied 23.1 | ~0.2 pts |
+| **Knockout vs group stage** | all matches **23.3** · group stage 24.4 · knockout 20.1 | ~4.3 pts |
+| **λ source** (PRE vs POST) | all-pooled **23.3** · POST-only 21.7 · regime-matched 23.6 · PRE-only 25.6 | ~3.9 pts |
+| **Gross-up** (in-stoppage wasting) | off 20.2 → **on 23.3** → geometric 24.4 | ~4.2 pts |
+| One-at-a-time band | **20.2% – 25.6%** | 5.5 pts ≈ 0.8× sampling |
+| Full **joint** envelope | **17.3% – 27.0%** | 9.7 pts ≈ 1.4× sampling |
 
-The one-at-a-time band (5.9 pts) is about the size of the sampling CI (6.9 pts), and the joint envelope (9.7 pts) only modestly exceeds it. The headline does not hinge on any single knob. The PRE-only λ source sets the top of the band at 27.3%, on a thin, wide-interval PRE sample; the central pooled rate is the one to read. The knockout-vs-group row recomputes the headline sourcing every match's rate from one stage (25.9% group, 21.5% knockout); both stay inside the envelope and the row is reported separately, excluded from the band/envelope.
+The one-at-a-time band (5.5 pts) is about the size of the sampling CI (7.1 pts), and the joint envelope (9.7 pts) only modestly exceeds it. The headline does not hinge on any single knob. The PRE-only λ source sets the top of the band at 25.6%, on a thin, wide-interval PRE sample; the central pooled rate is the one to read. The knockout-vs-group row recomputes the headline sourcing every match's rate from one stage (24.4% group, 20.1% knockout); both stay inside the envelope and the row is reported separately, excluded from the band/envelope.
 
 Flip mechanics: the model splits omitted-time goals 50/50 between the two teams (Objection 4) and treats any match leading by two or more at 90 as unflippable. 95 of the 314 matches were already decided by two or more goals at 90, so they cannot flip at all.
 
-**The honest limitation.** The owed-stoppage estimator is anchored on World Cup 2018, then frozen and applied unchanged to the other five tournaments. That transfer crosses the 2022 directive: the one calibration tournament sits on the PRE side, while the headline mostly lives on the POST side, where referees were explicitly told to behave differently. And the extrapolation is large. Owed time runs 17 to 25 minutes a match across the POST tournaments against 12.7 for 2018, with Copa América and AFCON nearly double the calibration level. The model's most exposed quantity is exactly where it can't be directly verified. It is validated only indirectly, through the frozen-2018 constants and the 2022 ball-in-play point. I would rather name that than bury it.
+**The honest limitation.** The owed-stoppage estimator is anchored on World Cup 2018, then frozen and applied unchanged to the other five tournaments. That transfer crosses the 2022 directive: the one calibration tournament sits on the PRE side, while the headline pools all six tournaments across the directive, including the POST tournaments where referees were explicitly told to behave differently. And the extrapolation is large. Owed time runs 17 to 25 minutes a match across the POST tournaments against 12.7 for 2018, with Copa América and AFCON nearly double the calibration level. The model's most exposed quantity is exactly where it can't be directly verified. It is validated only indirectly, through the frozen-2018 constants and the 2022 ball-in-play point. I would rather name that than bury it.

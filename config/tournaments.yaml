@@ -28,7 +28,7 @@ tournaments:
     name: "UEFA Euro 2024"
     competition_id: 55
     season_id: 282
-    group: POST
+    group: PRE
     expected_matches: 51
 
   - key: copa_america_2024
@@ -45,8 +45,8 @@ tournaments:
     group: POST
     expected_matches: 52
 
-# Group-level checksums (s01 gate). PRE=115, POST=199, total=314.
+# Group-level checksums (s01 gate). PRE=166, POST=148, total=314.
 group_checksums:
-  PRE: 115
-  POST: 199
+  PRE: 166
+  POST: 148
   TOTAL: 314

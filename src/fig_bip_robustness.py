@@ -30,7 +30,7 @@ from src.lib import bip, config, editorial
 
 # Opta published regulation ball-in-play (seconds/match) — the only external truths.
 OPTA_TRUTH_S = {"wc_2018": 54 * 60 + 50, "wc_2022": 58 * 60 + 4}
-PRE = {"wc_2018", "euro_2020"}
+PRE = {"wc_2018", "euro_2020", "euro_2024"}
 LABEL = {
     "wc_2018": "2018 World Cup", "euro_2020": "Euro 2020", "wc_2022": "2022 World Cup",
     "euro_2024": "Euro 2024", "copa_america_2024": "Copa 2024", "afcon_2023": "AFCON 2023",

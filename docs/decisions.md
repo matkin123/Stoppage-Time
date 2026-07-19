@@ -5,6 +5,427 @@ number and its band must be locked here (with the chosen knob_set) before publis
 
 ---
 
+## ADR-0039 — HEADLINE RE-LOCKED at 23.3% scoreline / 12.1% flip (s05 injury window re-keyed to the next live ball; residuals floored ≥0) (2026-07-17)
+
+**Human checkpoint, user-approved adoption (2026-07-17).** Supersedes ADR-0035's locked numbers.
+The s05 injury dead-time component was keyed to the `Referee Ball-Drop` event to close each injury
+window. Ball-Drop is logged inconsistently (present near only ~29% of injury flags, absent ~50%), so
+the pairing routinely grabbed a distant Ball-Drop and fabricated ~10-min injury windows that swept in
+routine dead time. This entry **re-keys the injury window to end at the next s03 in-play segment start
+(the next live ball), rule `inplay` (D1)**, re-fits the two era residuals, floors them at 0 (D2),
+re-runs the group-dependent chain, and re-locks. `s03/bip.py` is NOT touched; goals and live-minutes
+are untouched, so this moves only the *owed*/`true_stoppage` estimate, never the productivity rates.
+
+**The fix (D1 = `inplay`).** The injury window is now `[Injury Stoppage flag, next in-play segment
+start]`, intersected with the s03 dead segments. It structurally spans **at most one dead segment**, so
+— unlike the old Ball-Drop pairing — it *cannot* over-credit; the 600s `max_injury_s` cap is now a
+non-binding guard. This relocates real injury stoppage that WC2018's poor Ball-Drop logging had pushed
+into the residual back into the *marked* pieces where it belongs.
+
+**Residual handling (D2 = floor both residuals at 0).** Both era residuals are re-fit on the 32 WC2018
+matches (the only tournament with Nate Silver `expected` ground truth) under the new marked pieces:
+- **PRE** (`residual_silent_pre_s`): 94.1 → **25.9s** (positive, kept as-is). Excess-only celebration
+  crediting keeps PRE's marked total smaller, so a positive leftover survives.
+- **POST** (`residual_silent_s`): 24.2 → **0.0s (floored)**. The raw refit is **−47.7s**. A residual is
+  an *irreducible remainder still to add* — it can be 0 or positive, never negative. The negativity is a
+  WC2018-logging artifact: WC2018 has the worst Ball-Drop presence (17.9%), so relocating its now-marked
+  injury stoppage overshoots the Nate anchor and forces the fitted POST residual below zero. That is a
+  diagnostic, not a shippable value — **floor at 0** (add no positive top-up, no negative claw-back).
+  The ≈−1.2 min/match shift is near-uniform across all 314 matches, so it largely cancels in the
+  PRE−POST contrast. See `[[residual-calibration-mechanics]]`.
+
+**Headline framing UNCHANGED.** *If stoppage time were measured and awarded per the rulebook, **X% of
+matches would have ended with a DIFFERENT SCORELINE*** (≥1 extra goal in the omitted added time).
+Metric unchanged (D1, ADR-0019): X% = mean(1 − exp(−μ)), μ = Σ_h λ_h · omitted_live_h.
+
+**LOCKED VALUES (regenerated grid, group=all, window=1H+2H).**
+- **Central: X% = 23.3% [95% CI 20.1%, 27.3%]**, knob_set `silent_marked|overall|pooled_all|hl=4.0|on`.
+- **HEADLINE BAND (lead, one-factor-at-a-time over the legitimate knobs): 20.2%–25.6%** (width 5.5% ≈
+  0.8× sampling). **Full joint envelope** (all legitimate knobs varied together, 48 cells):
+  **17.3%–27.0%** (width 9.7% ≈ 1.4× sampling). Sampling CI width 7.1%.
+- **Outcome-flip secondary (reported SEPARATELY): 12.1% [10.4%, 14.2%]** (1H+2H).
+- 2H_only comparison: scoreline **15.8% [13.8%, 18.3%]**, flip **8.1% [7.0%, 9.4%]**.
+
+**Legitimate-knob sensitivities (each swept with the others at central, 1H+2H, silent FIXED at the
+calibrated marked point).**
+- **Productivity-decay half-life** h∈[2,8], central h=4: **22.0% (h2) .. 23.3% (h4) .. 24.5% (h8)**.
+- **In-stoppage gross-up** (central ON): off **20.2%** → **23.3% (ON, central)** → geometric ceiling **24.4%**.
+- **λ source**: pooled_all **23.3%** (central) · pooled_pre 25.6% (sets lead-band top; wide CI, thin PRE) ·
+  pooled_post 21.7% · regime_matched 23.6%. The lead-band bottom (20.2%) is the gross-up-OFF rail.
+- **Conditioning**: overall **23.3%** (central) · tied_nontied 23.1% (within noise).
+- Endpoint regression (gross-up OFF) backs out the combined rails: 1H+2H h=inf 22.6% / h=0 16.1%;
+  2H_only h=inf 16.1% / h=0 9.0%.
+- **Stage-source robustness (ADR-0033, reported row, EXCLUDED from band):** group stage 24.4% ·
+  all 23.3% (central) · knockout 20.1%.
+
+**Why the number moved (24.4% → 23.3%, −1.1 pp scoreline; 12.9% → 12.1%, −0.8 pp flip) — expected and
+coherent.** The `inplay` re-key removes the fabricated injury over-credit, lowering `true_stoppage` →
+lowering omitted live-time → lowering P(change), roughly uniformly across the X% surface (mean owed
+17.4 → 17.0 min/match; the whole grid shifts down ~1.1–1.2 pp). Both central and joint envelope stay
+INSIDE the previously published outer bound ([18.1%, 28.2%] → [17.3%, 27.0%]) — a re-centering within
+the documented uncertainty, not a new regime. The −1.1 pp move nominally trips the ">1 pp → bring to
+the human before re-locking" guardrail, so it was surfaced and approved before this lock.
+
+**Natural-experiment payoff.** The PRE-vs-POST contrast is preserved and cleanly directional:
+**PRE (166) 20.6% vs POST (148) 26.5%** scoreline (flip 10.5% vs 13.9%). The regime gap holds (owed
+pool PRE 14.02 → 13.51, POST 21.29 → 20.96 min; gap 7.27 → 7.45 min, +0.18) — the fix trims both sides
+near-uniformly, so the natural-experiment signal is essentially unchanged. **Descriptive
+natural-experiment quantities are UNCHANGED** (they are s03/s07-derived, and this ADR touches only s05
+owed): played added time PRE 6.96 / POST 11.00 min/match; in-stoppage dead time PRE 3.33 / POST 5.77
+min/match; 2H-stoppage productivity PRE 0.089 / POST 0.075 goals/live-min.
+
+**Estimator re-fit and calibration.** Re-fit on the 32 WC2018 matches under the `inplay` rule improves
+fit: **Pearson r 0.875 → 0.870, MAE 1.77 → 1.67 min** (MAE improves; r essentially flat). Constants stay
+WC2018-only — the injury re-key adds no new ground truth, it corrects how existing stoppage is
+partitioned. Silent still reported as the single Nate-WC2018-calibrated POINT, never a none/all band;
+outcome-flip always stated apart. Worked check: match 3939992 owed 42.2 → 26.19 min (floored POST
+residual; the draft's 25.4-min figure used the un-floored −47.7 residual and is superseded).
+
+**Provenance.** Code: `src/s05_incident.py` (`inplay_start` dict built from s03 in-play segment starts;
+injury branch re-keyed to the next resume; `import numpy as np`; `_next_resume`/`_merge`/
+`_intersect_total` guardrail UNCHANGED). Params: `residual_silent_pre_s` 94.1 → 25.9,
+`residual_silent_s` 24.2 → 0.0 (floored), `estimator_pearson_r` 0.875 → 0.870, `estimator_mae_min`
+1.77 → 1.67; `celebration_normal_s=60.0` and all other constants UNCHANGED. Tests: `test_s08_decay_
+endpoints` rails 0.238/0.173/0.098 → 0.226/0.161/0.090 (±0.004 tolerance UNCHANGED). Re-ran the
+group-dependent chain s01 → s05 → s07 → s08 → s09 (s02–s04 group-independent); `true_stoppage.parquet`,
+`counterfactual_summary.parquet`, `figures/`, and `docs/numbers_ledger.md` regenerated. **POST
+`true_stoppage` is NO LONGER byte-identical to ADR-0035** (intended — the POST residual moved 24.2 → 0).
+`config/tournaments.yaml`, the WC2026/Sky lane, and every prior ADR's recorded numbers are untouched.
+ADR-0035 below is retained as the historical record but its numbers are SUPERSEDED by this entry.
+
+---
+
+## ADR-0038 — WC2026 OWED boundary fixes: recover inter-window seam + lead-in dead time, remove half-time-sub false positives (2026-07-16)
+
+**HUMAN CHECKPOINT — WC2026 lane only; the six-tournament headline (ADR-0035: 24.4% / 12.9%) and
+every locked StatsBomb parquet, `config/*`, and prior ADR are byte-stable.** Touches only
+`src/sky_wc2026/build_wc2026_inputs.py` + `data/processed/sky_wc2026/`. `params.yaml` read READ-ONLY
+(Nate ladder + caps frozen). Workbook git-ignored, never committed. **An owed-vs-played estimate from
+the ADR-0037 iteration was already sent to the Sky journalist team**, so this ADR ships an explicit
+before→after delta (below); the net move is small (+0.26 min/match, +1.3%) — the Sky "before" number
+stands essentially unchanged. Built, ledger regenerated, worked examples verified — STOP for review.
+
+### Three boundary effects the ADR-0037 model still mishandled
+The delay-window redesign fixed *within-window* under-crediting but left three *boundary* errors, all
+surfaced by the 2026-07-16 top-5 audit and hand-verified on three fixtures:
+
+1. **Inter-window seam loss (ADDS owed).** `Stoppage_Candidates` splits one continuous stoppage into
+   two candidate windows at an interior logged non-football event (VAR sliver, card, formation change).
+   The dead seconds *between* those two windows sit in NEITHER dead nor owed. If **no open-play event**
+   occurs in the gap, the ball never went live → it is one stoppage Opta split in two. **Credit the
+   seam.** Recurs in 96/96 matches; no single seam >17 s.
+2. **Lead-in loss (ADDS owed).** A delay stoppage's candidate window begins at the **Type 27/28/65
+   marker**, not at the **Foul / Ball-out / Offside** that actually killed the ball. The intervening
+   dead time (~12 s in Canada v Qatar: Foul 50:43 → Type 27 50:55) is in neither dead nor owed. Walk
+   back from the window start to the ball-death event and credit it (cap 180 s).
+3. **Half-time-substitution false positives (REMOVES owed).** A substitution made *during the
+   half-time interval, before the second-half whistle* does not stop live play, so it must add ZERO to
+   owed. ADR-0037's per-gap sub branch wrongly credited it. **Detect via `Match_Event_Log`'s `Match
+   clock` column** (previously unread by the estimator): a sub gap whose start/end match-clock equals
+   the period-start time (P1 `00:00`, P2 `45:00`, P3 `90:00`, P4 `105:00`) is pre-whistle → route its
+   `D` to the excluded baseline and credit 0. Correct in the sham-*skeptical* direction.
+
+### Implementation (all additive to ADR-0037; delay/ladder logic byte-identical otherwise)
+Two new "ball went live?" event sets read from `Match_Event_Log.Default stoppage family` — open-play
+= {`Open play / pass`, `Open play`, `Open play / challenge`, `Shot / restart`}; ball-death = {`Foul`,
+`Ball out of play`, `Offside`} — collected per `(fixture, period)` and sorted. Per stitched window,
+tracking `prev_end`: **seam** fires when `(w_start − prev_end) > stitch_tol` **and** no open-play in
+`[prev_end, w_start)`; **lead-in** fires when the last open-play before `w_start` is *after* `prev_end`
+(a fresh onset, not a seam continuation) and a ball-death event sits between it and `w_start`. The
+`op0 > prev_end` gate makes seam and lead-in **mutually exclusive per boundary** (no double-count), and
+both cover time strictly *outside* the window so they never overlap the delay-full `D`. Component 3
+lives in the existing sub branch: a pre-whistle sub adds `min(D, cap_sub)` to a new
+`halftime_removed` counter, routes `D` to `excluded_s`, and `continue`s (credits 0).
+
+### Before → after (ADR-0037 baseline → ADR-0038; 96 matches, ledger regenerated)
+| metric | before | after | delta |
+|---|---|---|---|
+| mean OWED (min) | 19.65 | 19.91 | **+0.26** |
+| mean PLAYED (min) | 12.69 | 12.69 | 0.00 |
+| mean (OWED − PLAYED) (min) | 6.96 | 7.23 | **+0.27** |
+| % OWED > PLAYED | 100.0% | 100.0% | 0.0 |
+| owed `sub` (min) | 326.2 | 280.5 | −45.7 |
+| owed `seam` (min) | 0.0 | 27.4 | +27.4 |
+| owed `leadin` (min) | 0.0 | 43.9 | +43.9 |
+| excluded baseline (min) | 259.8 | 307.0 | +47.2 |
+
+Net +0.26 min/match = **+0.29 seam +0.46 lead-in −0.48 half-time-sub** — the correct removal nearly
+cancels the two additions, so the estimate barely moves and the owed≫played story is unchanged.
+Component totals: **seam 27.4 min (1646 s / 362 seams)**, **lead-in 43.9 min (2632 s / 658 windows)**,
+**half-time-sub removal −45.6 min (2738 s / 58 pre-whistle windows)**. (`sub` falls by the *capped*
+45.7 min while `excluded` rises by the *uncapped* Σ`D` 47.2 min — the 1.5 min gap is the over-cap
+overage of subs with `D` > 90 s, correctly kept in the dead accounting.)
+
+**Seam 27.4 min vs the audit's 40.8 min "under-count":** the audit measured *all* inter-window dead;
+this credits only seams with no open-play between (27.4 min). The ~13 min difference is inter-window
+gaps where the ball genuinely restarted — legitimate separate stoppages, correctly NOT merged.
+
+### Worked checks (traced to the second; match the frozen `[[wc2026-owed-mechanics]]` baseline)
+- **Canada v Qatar 50:43→57:07:** window `50:55→52:39` gets **lead-in +12.0 s** (ball-death @50.717 ≈
+  Foul 50:43 → Type-27 window start 50:55); next window `52:48→57:07` gets **seam +9.0 s** (52:39→
+  52:48, VAR+card sliver, no open-play between). Exactly the ~21 s the frozen record said was lost.
+- **Germany v Paraguay:** P2 `45:00→45:00` pre-whistle sub `D`=141.9 s removed (spec 142→0); the ET
+  half-time at P3 `90:00→90:00` (77.0 s) is also correctly caught — the rule generalises to all period
+  starts, not just P2.
+- **Jordan v Argentina:** P2 `45:00→45:00` pre-whistle sub `D`=74.6 s removed (spec 75→0).
+
+### Gates (all PASS; G2 re-derived)
+G1 PLAYED vs Sheet1 |Δ|≤30 s on 90 non-ET (max 2.0 s). **G2 re-derivation:** seam + lead-in are dead
+seconds that live *outside* the candidate windows summed in `Stoppage_Summary`, so crediting them can
+legitimately lift OWED above the narrow summary-dead figure. The invariant "OWED ≤ real dead" still
+holds against the **broad** measure `total_dead_broad_s = summary_dead + seam + lead-in`; gate keys off
+that. Both ratios reported: **max owed/broad-dead 0.59, max owed/summary-dead 0.60** — in practice even
+summary-dead is never exceeded, but broad is the theoretically correct bound. G3 hydration ≤1/half (20
+credits). G4 excluded+keeper **7.5%** of dead (7.2% + 0.3%). X-check ΣD vs Stoppage_Summary max|Δ| 0.0 s.
+
+### Scope / provenance
+- **est_min moves only +0.26 min/match (+1.3%) — NOT material**, unlike ADR-0037. The demoted
+  chart-render unit does not need re-running on account of this ADR (agg01 regenerated regardless).
+- **agg_02 (productivity buckets) is byte-unchanged** — this ADR touches OWED only.
+- `src/sky_wc2026/build_wc2026_inputs.py` (`OPENPLAY_FAM`/`BALLDEATH_FAM`/`PERIOD_START_MC`/
+  `LEADIN_CAP_S`, `_has_openplay`/`_last_openplay_before`/`_first_balldeath_in`, seam+lead-in in
+  `compute_owed`, pre-whistle sub branch, `total_dead_broad_s`, ledger ADR-0038 sections); regenerated
+  `data/processed/sky_wc2026/{agg01_estimate_vs_played,agg02_productivity_by_bucket}.{parquet,csv}` +
+  `ledger.md`. No locked artifact, config, or prior ADR modified; workbook git-ignored.
+
+### Chart re-render (2026-07-16, render-only)
+- Re-ran `python -m src.sky_wc2026.render_wc2026_charts` against the ADR-0038 tables. Overwrote
+  `figures/sky_wc2026/agg_01_scatter_estimate_vs_played_wide.png` (footer **19.6 → 19.9 mins owed**;
+  subtitle "100%" and played "12.7" unchanged) and `agg_02_productivity_by_bucket_bordered.png`
+  (byte-identical — agg_02 unchanged). No table rebuild. The human-renamed published copies
+  (`stoppage_owed_vs_played.png`, `goal_scoring.png`) were left untouched per the human's call — the
+  bar copy is still current; the scatter copy is stale until the human re-copies it. README: no change
+  (WC2026 lane not in the public narrative).
+
+---
+
+## ADR-0037 — WC2026 OWED redesign: credit Opta delay windows (27/28/65) as genuine stoppage (2026-07-16)
+
+**HUMAN CHECKPOINT — WC2026 lane only; the six-tournament headline (ADR-0035: 24.4% / 12.9%) and
+every locked StatsBomb parquet, `config/*`, and prior ADR are byte-stable.** This changes the WC2026
+OWED estimate (`est_min`) only, in `src/sky_wc2026/build_wc2026_inputs.py` + `data/processed/
+sky_wc2026/`. `params.yaml` read READ-ONLY (Nate ladder + caps frozen). The workbook is git-ignored,
+never committed. Built, ledger regenerated, before/after reported below — STOP for review before it
+feeds the charts (`est_min` moved materially, so the demoted chart-render unit re-runs after this).
+
+### The bug (2026-07-15/16 investigation)
+ADR-0036's require-a-marker ladder (`compute_owed`) walked each pre-segmented dead gap through an
+8-step first-match-wins precedence; step 8 = excluded, credited 0. Audit of what landed in step 8:
+**excluded = 630.7 min = 14.9% of all dead** (~6.6 min/match), and **57.8% of that (364.5 min) was
+"delay-bounded"** — a gap whose boundary is an Opta **type 27 (Start delay)**, **28 (End delay)**, or
+**65 (Contentious referee decision)**. These are real referee-caused stoppages (injury, VAR review,
+ball/net inspection, melee) that Opta flags as a delay but that carry NO restart qualifier and NO
+incident event, so `resolve_restart` returned `None` and they fell to rule 8. Per Law 7 that time
+must be added back; crediting it 0 is a **downward bias in `est_min` concentrated in long-stoppage
+matches.** (Opta has no VAR event type; 65 is the closest proxy — only 62× tournament-wide — so these
+windows are labelled "referee-caused delay of unspecified cause", never "VAR".)
+
+Reference (event-type source of truth, corroborated live this session):
+`raw.githubusercontent.com/eddwebster/football_analytics/.../opta_event_types.csv` — **27 = Start
+delay, 28 = End delay, 30 = End, 43 = Deleted event, 65 = Contentious referee decision**. Types
+80/81/83/84/90/91 present in the feed are not in the reference and are not delays.
+
+### The fix (two coupled changes)
+1. **Window-stitching.** `Stoppage_Candidates` over-segments one stoppage into several gaps at each
+   interior logged non-football event. `_stitch_windows` merges temporally contiguous gaps within a
+   `(match, period)` — `next.start − cur.end ≤ 0.05 s` (**exact contiguity == "no live football
+   between"**; the tolerance is non-load-bearing, 481 vs 464 delay windows across 0.05–2.0 s) — into
+   maximal dead windows.
+2. **Credit every delay window in FULL.** If ANY constituent gap of a window carries a 27/28/65 on
+   either boundary (so **interior** flags count too — they surface as inner sub-gap boundaries), the
+   whole window's summed `D` is OWED, credited to a new `delay` component. This **supersedes** the
+   per-gap ladder for those gaps (precedence decision: delay-window-full-credit wins over per-gap
+   allowances — a Law-7 referee stoppage is addable in full, not net of a routine-restart allowance).
+   No double-count and **G2 holds by construction**: windows partition all candidate dead, delay
+   windows credit their full `D`, non-delay gaps credit ≤ `D`, so OWED ≤ total dead.
+
+**Lone type-65 (contentious, no 27/28) also qualifies** — defensible per Law 7 (a contentious/VAR
+decision is a referee-caused stoppage). Immaterial anyway: **1 window, 0.7 min** tournament-wide.
+
+### Worked check — France v Senegal, P2 (the window that defined the spec)
+Three exactly-contiguous gaps `57.700→59.467 (Out→27)`, `59.467→60.733 (65→28)`,
+`60.733→60.950 (28→Deleted)` = **194.5 s**, previously all rule-8 excluded (0), now stitched into one
+window and **credited in full (0 → 194.5 s)**. The adjacent `60.983→61.150` Pass→Pass gap (2 s of
+football between) is correctly NOT merged and stays a non-addable open-play lull.
+
+### Before → after (96 matches; ledger regenerated)
+- mean OWED **14.85 → 19.65 min** (+4.80, +32%); median 14.88 → 19.44.
+- mean (OWED − PLAYED) **2.16 → 6.96 min**; **% OWED > PLAYED 82.3% → 100%** (PLAYED unchanged 12.69).
+- excluded silent baseline **630.7 → 259.8 min (14.9% → 6.1% of dead)** — the residual is now
+  genuine open-play lulls (86 min) + administrative/period-end/keeper records.
+- delay component = **1023.5 min (481 windows / 980 gaps) = 54.3% of owed, 24.1% of dead**.
+
+**Decomposition of the +4.80 min/match (why it exceeds the ~3.8/match prior).** Of the +460.8 min
+total: **+370.9 min** is genuinely-excluded delay-bounded time now credited (the core fix — matches
+the 364.5 min prior); the remaining **+89.9 min** comes from full-window-`D` superseding the
+previously *capped* (injury/sub/card) or *excess-only* (restart) per-gap credits for gaps that sit
+inside a delay window — a direct consequence of the task's "credit the ENTIRE contiguous window"
+instruction. Hydration barely changes in substance: 464 of its old 494.7 min simply move from the
+`hydration` bucket to `delay` (a hydration break is bracketed by 27/28, same full `D`), which is why
+G3's separate hydration count drops to 20/half.
+
+### Gates (all PASS; G2 now binding)
+G1 PLAYED vs Sheet1 |Δ|≤30 s on 90 non-ET (max 2.0 s). **G2 OWED ≤ total dead per match, max ratio
+0.52 → 0.62.** G3 hydration ≤1/half. G4 excluded+keeper 15.1% → **6.4%** of dead. X-check ΣD vs
+Stoppage_Summary max|Δ| 0.0 s. New ledger section breaks out the delay credit + the residual
+excluded-by-family.
+
+### Methodology revisit (the deeper ask) — RECOMMENDATION, for the checkpoint
+The require-a-marker *ladder* is per-gap and leaks whole stoppages that are dead-but-unmarked
+(the 27/28/65 windows). This ADR ships a **hybrid**: window-first for delay windows, per-gap ladder
+for everything else. I recommend **keeping the hybrid as shipped** for this lane, because the leak was
+concentrated almost entirely in delay windows, so it captures ~all the benefit of a full rewrite.
+A **fully window-first model** (segment each half into maximal dead windows, then classify each
+window's addable share: full `D` for delay/injury/VAR/celebration/card/sub/hydration windows, excess
+over allowance for pure-restart windows, 0 for pure open-play lulls) is conceptually cleaner and
+removes the last per-gap seams, but (a) it needs an explicit precedence for windows that MIX a restart
+with a delay, and (b) beyond the delay windows already handled here it would move the number very
+little — its only additional effect is dropping restart allowances inside mixed windows. **Recommend
+deferring the full window-first rewrite** unless the WC2026 lane is ever promoted to a headline/
+calibrated figure; the hybrid is the right cost/benefit for a descriptive chart input. Bringing this
+to the human rather than silently rewriting, per the task.
+
+**Provenance.** `src/sky_wc2026/build_wc2026_inputs.py` (`_stitch_windows`, `DELAY_EVT`,
+`STITCH_TOL_S`, reworked `compute_owed`, delay ledger section); regenerated `data/processed/
+sky_wc2026/{agg01_estimate_vs_played,agg02_productivity_by_bucket}.{parquet,csv}` + `ledger.md`.
+agg_02 (productivity buckets) is UNCHANGED — this ADR touches OWED only. No locked artifact, config,
+or prior ADR modified; workbook git-ignored.
+
+---
+
+## ADR-0036 — WC2026 (Sky / Opta) chart-input lane: two data tables built, NO model change (2026-07-15)
+
+**Scope: DATA INPUTS ONLY for two existing figures, from the Sky-supplied Opta F24 workbook. This
+touches NOTHING in the locked StatsBomb pipeline.** The six-tournament headline (ADR-0035: 24.4% /
+12.9%) and every `data/processed/*.parquet`, `config/tournaments.yaml`, and prior ADR are byte-stable.
+WC2026 is a self-contained lane: new code under `src/sky_wc2026/`, outputs under
+`data/processed/sky_wc2026/`. `config/params.yaml` is read READ-ONLY (frozen Nate ladder + caps).
+Charts are rendered next session — this unit produces tables + a QA ledger and STOPS (no matplotlib).
+
+**Source.** `data/DONOTSHAREWorldCup_Stoppages.xlsx` (68 MB, Opta/Stats Perform; **DO NOT commit or
+share** — read with openpyxl `read_only, data_only`). Richer than StatsBomb: wall-clock dead time,
+in-stream 4th-official board, and explicit hydration breaks. 96 matches (WC2026 through Round of 16).
+
+**Two deliverables (plug-compatible with `src/figures_requested.py`).**
+- `agg01_estimate_vs_played.{parquet,csv}` — per match: `est_min` (OWED, y) vs `played_min` (PLAYED,
+  x), for `_scatter_estimate_pub`. 96 rows. Carries per-component `owed_*_min`, `played_reg_min`,
+  `played_sheet1_min`, `played_delta_s`, `extra_time_match`.
+- `agg02_productivity_by_bucket.{parquet,csv}` — per 10-min bucket: `goals`, `live_min`, `rate`,
+  Poisson `ci_lo/ci_hi` (`src/lib/stats.poisson_rate_ci`), for `_bar_buckets_pub`. 12 buckets, repo
+  `RANGES`/`BUCKET_ORDER` contract reused verbatim.
+
+**Methodology decisions (made with the user this session; do NOT re-litigate).**
+1. **Require-a-marker for OWED.** A dead-ball gap is credited only if it carries an explicit Opta
+   event/qualifier marker (hydration, injury, sub, card, celebration, or a resolved restart type).
+   Unmarked open-play lulls get **0** — this is WC2026's analogue of the StatsBomb silent baseline.
+2. **No residual constant.** The s05 `residual_silent*` additive terms are StatsBomb-estimator
+   artifacts fit to Nate WC2018; they do NOT apply to a wall-clock Opta source. WC2026 owes only what
+   is marked.
+3. **No StatsBomb parity / calibration check.** There is no external WC2026 anchor; the methodology is
+   trusted. The ledger is eyeball QA, explicitly **NOT a calibration target**.
+4. **Ignore the 4th-official board.** The x-axis is stoppage PLAYED (per-period End clock minus
+   nominal period end), not announced (+X). Board is available in the workbook but unused here.
+5. **Hydration counts FULLY toward owed, ≤1 credit per half** (G3 gate). 192 credits / 192 listed
+   breaks.
+6. **Celebration credited FULL** (WC2026 is POST-directive; no PRE excess-only allowance).
+7. **agg_01 includes extra time (periods 1–4; period 5 = penalty shootout EXCLUDED); agg_02 stays
+   regulation (P1+P2).** ET knockouts inflate raw min/match, so agg_01 also carries a
+   regulation-comparable `played_reg_min` and an `extra_time_match` flag.
+
+**OWED precedence per gap (first-match-wins).** hydration → injury → sub → card → celebration →
+restart-ladder EXCESS over allowance (throw-in 20 / goal-kick 30 / corner 45 / free-kick 60s, from
+frozen `params.yaml`) → keeper restart (0) → excluded (0).
+
+**QA snapshot (ledger, eyeball only).** 96 matches; mean OWED **14.85 min**, mean PLAYED **12.69 min**,
+mean missing **2.16 min**; **82.3%** of matches OWED > PLAYED. Owed mix: hydration 34.7%, sub 26.6%,
+celebration 18.3%, card 11.9%, restarts+injury ~8%. Excluded silent baseline **14.9%** of total dead
+(~6.6 min/match, consistent with the StatsBomb non-addable baseline concept); excluded-by-family
+breakdown confirms no restart/foul leak (penalty/set-piece 1.4 min, shot/restart 0.2 min — trivial).
+Gates: **G1** PLAYED vs Sheet1 |Δ|≤30s on all 90 non-ET matches (max|Δ| 2.0s); the 6 ET matches are
+reported separately (Sheet1 counts the two 15' ET halves as beyond-90' stoppage, not
+regulation-comparable). **G2** OWED ≤ total dead per match (max ratio 0.52). **G3** hydration ≤1/half.
+**G4** excluded+keeper = 15.1% of dead. X-check ΣD vs Stoppage_Summary: max|Δ| 0.0s. agg_02 2H-stop
+rate 0.0814 [0.0553, 0.1155] — the familiar late-game productivity spike is present.
+
+**Provenance.** `src/sky_wc2026/build_wc2026_inputs.py` (+ `__init__.py`); outputs
+`data/processed/sky_wc2026/{agg01_estimate_vs_played,agg02_productivity_by_bucket}.{parquet,csv}` +
+`ledger.md`. Reuses `src/figures_requested.py` (RANGES/BUCKET_ORDER/bucket_of) and `src/lib/{config,
+stats}`. No locked artifact, ADR, or config touched; the workbook is git-ignored and never committed.
+
+---
+
+## ADR-0035 — HEADLINE RE-LOCKED at 24.4% scoreline / 12.9% flip (Euro 2024 reclassified POST → PRE) (2026-07-09)
+
+**Human checkpoint, user-approved adoption (2026-07-09).** Supersedes ADR-0031's locked numbers.
+UEFA declined to implement the 2022 Collina/FIFA stoppage-time directive at Euro 2024, so that
+tournament was refereed under the PRE-directive regime. Coding it POST mislabels the treatment and
+contaminates every PRE-vs-POST contrast. This entry moves **Euro 2024 (51 matches) from POST to PRE**
+everywhere the `group` label is read, re-runs the model, and re-locks.
+
+- **Tournament pools change: PRE 115 → 166 (adds Euro 2024), POST 199 → 148.** Source of truth
+  `config/tournaments.yaml` (`euro_2024.group: PRE`, `group_checksums` PRE 166 / POST 148); the label
+  threads `matches.parquet` (s01) → s05 era-conditional celebration/residual → s08 λ-pools
+  automatically. s01 gate + `tests/test_lib.py` checksums updated to 166 / 148.
+
+**Headline framing UNCHANGED.** *If stoppage time were measured and awarded per the rulebook, **X%
+of matches would have ended with a DIFFERENT SCORELINE*** (≥1 extra goal in the omitted added time).
+Metric unchanged (D1, ADR-0019): X% = mean(1 − exp(−μ)), μ = Σ_h λ_h · omitted_live_h.
+
+**LOCKED VALUES (regenerated grid, group=all, window=1H+2H).**
+- **Central: X% = 24.4% [95% CI 21.1%, 28.3%]**, knob_set `silent_marked|overall|pooled_all|hl=4.0|on`.
+- **HEADLINE BAND (lead, one-factor-at-a-time over the legitimate knobs): 21.1%–26.7%** (width 5.6% ≈
+  0.8× sampling). **Full joint envelope** (all legitimate knobs varied together, 48 cells):
+  **18.1%–28.2%** (width 10.0% ≈ 1.4× sampling). Sampling CI width 7.2%.
+- **Outcome-flip secondary (reported SEPARATELY): 12.9% [11.2%, 15.0%]** (1H+2H).
+- 2H_only comparison: scoreline **16.8% [14.8%, 19.4%]**, flip **8.9% [7.8%, 10.3%]**.
+
+**Legitimate-knob sensitivities (each swept with the others at central, 1H+2H, silent FIXED at the
+calibrated marked point).**
+- **Productivity-decay half-life** h∈[2,8], central h=4: **23.0% (h2) .. 24.4% (h4) .. 25.7% (h8)**.
+- **In-stoppage gross-up** (central ON): off **21.1%** → **24.4% (ON, central)** → geometric ceiling **25.6%**.
+- **λ source**: pooled_all **24.4%** (central) · pooled_pre 26.7% (sets lead-band top; wide CI, thin PRE) ·
+  pooled_post 22.8% · regime_matched 24.7%. The lead-band bottom (21.1%) is the gross-up-OFF rail.
+- **Conditioning**: overall **24.4%** (central) · tied_nontied 24.1% (within noise).
+- Endpoint regression (gross-up OFF) backs out the combined rails: 1H+2H h=inf 23.8% / h=0 16.9%;
+  2H_only h=inf 17.3% / h=0 9.8%.
+- **Stage-source robustness (ADR-0033, reported row, EXCLUDED from band):** group stage 25.5% ·
+  all 24.4% (central) · knockout 21.2%.
+
+**Why the number moved (24.8% → 24.4%, −0.4 pp) — entirely PRE-driven and expected.** Reclassifying
+Euro 2024 to PRE switches its 51 matches from full goal→kickoff celebration crediting +
+`residual_silent_s=24.2` to the PRE excess-over-60s allowance + `residual_silent_pre_s=94.1`, which
+LOWERS those matches' `true_stoppage` → lowers their omitted live-time → lowers P(change). The
+pooled_all λ is definitionally unchanged by a relabel (same 314 matches, same goals), so the entire
+central shift is Euro 2024's omitted-time dropping. The 148 remaining POST matches' `true_stoppage`
+is byte-identical to ADR-0031 (max |Δ| = 0 — the correctness gate). Both the central and the joint
+envelope stay INSIDE the previously published outer bound ([18.9%, 28.6%] → [18.1%, 28.2%]); this is a
+re-centering within the documented uncertainty, not a new regime.
+
+**Natural-experiment payoff (the point of the reclassification).** With Euro 2024 correctly on the PRE
+side the regime contrast sharpens and is now clean: **PRE (166) 22.0% vs POST (148) 27.1%** scoreline
+(flip 11.5% vs 14.4%). Descriptively, POST plays materially more added time and wastes more of it:
+**played added time PRE 6.96 → POST 11.00 min/match** (match length 96.96 → 101.00, +4.0 min);
+**in-stoppage dead time PRE 3.33 → POST 5.77 min/match**; 2H-stoppage productivity PRE 0.089 → POST
+0.075 goals/live-min. Euro 2024 now serves as a same-confederation PRE control against the POST World Cups.
+
+**Silent treatment, caveats, coverage, calibration — all carried forward UNCHANGED from ADR-0031/0025.**
+Silent reported as the single Nate-WC2018-calibrated POINT, never a none/all band; outcome-flip always
+stated apart. **Estimator constants FROZEN (r=0.875, MAE=1.77 min): they are fit on the 32 WC2018
+matches — the only tournament with Nate Silver external ground truth — and Euro 2024 adds no ground
+truth, so the calibration is NOT re-fit; Euro 2024 simply inherits the PRE treatment.**
+
+**Provenance.** Config: `config/tournaments.yaml` euro_2024 `group: PRE`; `group_checksums` PRE 166 /
+POST 148. Params UNCHANGED from ADR-0031 (`residual_silent_pre_s=94.1`, `residual_silent_s=24.2`,
+`celebration_normal_s=60.0`, `estimator_pearson_r=0.875`, `estimator_mae_min=1.77`). Code touched
+(label only, no methodology): `src/statsbomb_quality.py` REGIME dict, `src/fig_bip_robustness.py` PRE
+set, `src/figures_requested.py` display label, `src/s01_ingest.py` docstring, `tests/test_lib.py`
+checksums. Re-ran the group-dependent chain s01 → s05 → s07 → s08 → s09 (s02–s04 outputs are
+group-independent); `matches.parquet`, `true_stoppage.parquet`, `counterfactual_summary.parquet`,
+`figures/`, and `docs/numbers_ledger.md` regenerated. ADR-0031 below is retained as the historical
+record but its numbers are SUPERSEDED by this entry.
+
+---
+
 ## ADR-0034 — Team quality and the outcome-flip: how quality enters (and mostly doesn't); Elo/quality test RUN (flip move 0.38 pp) — LOCK UNCHANGED (2026-07-01)
 
 **Analysis/reasoning session, not a build or a lock.** Triggered by a reviewer objection to the

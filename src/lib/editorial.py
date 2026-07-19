@@ -133,6 +133,11 @@ def titleblock(fig, title, subtitle, source, left_in=0.46, title_size=17,
     title_artist = fig.text(x, fy(0.44), title, ha="left", va="top",
                             fontsize=title_size, fontweight="bold", color=INK)
 
+    # Multi-line titles push everything below them down so the subtitle doesn't
+    # overlap. Single-line titles get zero offset (unchanged for existing figures).
+    n_title_lines = title.count("\n") + 1
+    title_offset_in = (n_title_lines - 1) * (title_size / 72.0 + 0.06)
+
     if isinstance(subtitle, str):
         if subtitle_width_in is not None:
             max_px = subtitle_width_in * fig.dpi
@@ -140,7 +145,7 @@ def titleblock(fig, title, subtitle, source, left_in=0.46, title_size=17,
             max_px = title_artist.get_window_extent(renderer=_renderer(fig)).width
         subtitle = _wrap_to_px(fig, subtitle, max_px, 10.5)
 
-    yi = 0.80
+    yi = 0.80 + title_offset_in
     sub_line_h = 10.5 / 72.0
     subtitle_bottom_in = yi + sub_line_h
     for line in subtitle:

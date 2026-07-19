@@ -40,7 +40,7 @@ LABEL = {"wc_2018": "WC 2018", "euro_2020": "Euro 2020", "wc_2022": "WC 2022",
          "euro_2024": "Euro 2024", "copa_america_2024": "Copa 2024",
          "afcon_2023": "AFCON 2023"}
 REGIME = {"wc_2018": "PRE", "euro_2020": "PRE", "wc_2022": "POST",
-          "euro_2024": "POST", "copa_america_2024": "POST", "afcon_2023": "POST"}
+          "euro_2024": "PRE", "copa_america_2024": "POST", "afcon_2023": "POST"}
 
 
 def _classify(reg: pd.DataFrame, tour: dict) -> pd.DataFrame:

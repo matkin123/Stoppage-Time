@@ -1,6 +1,6 @@
 # Outcome-flip 50/50 team-split: empirical validation + leverage
 
-Standalone check of the one assumption in the **outcome-flip** secondary metric (s08 `outcome_flip`, locked 13.0% / ADR-0031): when a team leads by one at 90', the flip credits the trailing team with a fixed **half** of the total omitted-time goals (`P = 1 - exp(-mu * p_trail)`, `p_trail = 0.5`). The **headline scoreline** metric (24.8%) does NOT use this split -- it asks '>=1 extra goal by either team' and rides the total `mu`, so nothing below can move it. READS production parquet; no locked artifact touched.
+Standalone check of the one assumption in the **outcome-flip** secondary metric (s08 `outcome_flip`, locked 12.1% / ADR-0039): when a team leads by one at 90', the flip credits the trailing team with a fixed **half** of the total omitted-time goals (`P = 1 - exp(-mu * p_trail)`, `p_trail = 0.5`). The **headline scoreline** metric (23.3%) does NOT use this split -- it asks '>=1 extra goal by either team' and rides the total `mu`, so nothing below can move it. READS production parquet; no locked artifact touched.
 
 ## 1. What the data says (p_trail measured from event goals)
 
@@ -19,8 +19,8 @@ By era (all stoppage goals):
 
 | era | n | trailing | leading | p_trail | 95% CI |
 |---|---|---|---|---|---|
-| PRE | 12 | 7 | 5 | 0.583 | [0.312, 0.820] |
-| POST | 29 | 15 | 14 | 0.517 | [0.341, 0.690] |
+| PRE | 19 | 12 | 7 | 0.632 | [0.409, 0.818] |
+| POST | 22 | 10 | 12 | 0.455 | [0.263, 0.657] |
 
 Every cut straddles 0.50. The directly-relevant added-time window (2H stoppage) leans slightly toward the trailing team (**0.548**, n=31, CI contains 0.5); it reverses toward the leader in the broader late window (~0.47 after 75-80', the counter-attack channel); and the large-sample anchor sits at **0.509** (n=287, tight CI). The trailing-desperation and leading-counter channels roughly cancel -- **0.50 is well-calibrated**, not a convenient guess.
 
@@ -30,17 +30,17 @@ Per-match `mu` recovered from the locked grid (`mu = -ln(1 - p_change)`, central
 
 | p_trail | source | flip X% |
 |---|---|---|
-| 0.400 |  | 12.04% |
-| 0.471 | late-window (>75') | 12.71% |
-| **0.500** | **model (locked)** | **12.98%** |
-| 0.537 |  | 13.31% |
-| 0.548 | 2H stoppage (measured) | 13.41% |
-| 0.600 |  | 13.87% |
+| 0.400 |  | 11.21% |
+| 0.471 | late-window (>75') | 11.83% |
+| **0.500** | **model (locked)** | **12.07%** |
+| 0.537 |  | 12.38% |
+| 0.548 | 2H stoppage (measured) | 12.47% |
+| 0.600 |  | 12.90% |
 
-lead_by_1 is the largest state bucket, so the split touches a big share of matches -- but because the measured value is so near 0.5, leverage is small: the most-relevant point estimate (0.548) moves the flip just **+0.4 pp to ~13.4%**, and the full p_trail in [0.40, 0.60] span is only 12.0%-13.9%. The headline scoreline (24.8%) is unaffected at every value.
+lead_by_1 is the largest state bucket, so the split touches a big share of matches -- but because the measured value is so near 0.5, leverage is small: the most-relevant point estimate (0.548) moves the flip just **+0.4 pp to ~12.5%**, and the full p_trail in [0.40, 0.60] span is only 11.2%-12.9%. The headline scoreline (23.3%) is unaffected at every value.
 
 ## 3. Conclusion (for the methods record / a pre-empt)
 
-The 50/50 split is **empirically supported and non-load-bearing**. Keep 0.5 as the central -- it now traces to a measurement (n=31 in the cleanest cut, CI containing 0.5) plus this p-sweep band, the same script+table+documented-assumption standard every other knob gets (CLAUDE.md sec 1), rather than an unexamined constant. The honest caveat is sample size: n=31 in the cleanest cut cannot statistically distinguish 0.50 from 0.55, so 0.5 is both defensible and unresolvable to finer precision. If a single best-supported value is preferred over the round number, the added-time-specific 0.548 nudges the flip from 13.0% to ~13.4% -- inside the CI either way.
+The 50/50 split is **empirically supported and non-load-bearing**. Keep 0.5 as the central -- it now traces to a measurement (n=31 in the cleanest cut, CI containing 0.5) plus this p-sweep band, the same script+table+documented-assumption standard every other knob gets (CLAUDE.md sec 1), rather than an unexamined constant. The honest caveat is sample size: n=31 in the cleanest cut cannot statistically distinguish 0.50 from 0.55, so 0.5 is both defensible and unresolvable to finer precision. If a single best-supported value is preferred over the round number, the added-time-specific 0.548 nudges the flip from 12.1% to~12.5% -- inside the CI either way.
 
-_Reproduce: `python -m src.flip_split_sensitivity`. Harness check: p_trail=0.5 reproduces the locked pct_outcome_flip (0.12976) to <1e-6._
+_Reproduce: `python -m src.flip_split_sensitivity`. Harness check: p_trail=0.5 reproduces the locked pct_outcome_flip (0.12071) to <1e-6._

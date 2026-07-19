@@ -7,7 +7,7 @@ Per match & half, sums identifiable dead-time windows:
                   directive instructs refs to add the WHOLE celebration), so POST is unchanged.
   sub             Player Off / Substitution -> next restart
   card            Foul Committed w/ card or Bad Behaviour -> next restart
-  injury          Injury Stoppage -> Referee Ball-Drop
+  injury          Injury Stoppage -> next s03 in-play segment start (next live ball; ADR-0039)
   restart_excess  routine restart-boundary gap, EXCESS over Nate's allowance (IMPL-5)
 Each window is clipped to a sane max (params.yaml). lower_bound_s is the UNION of all
 incident windows (merged, so overlapping windows are not double counted) INTERSECTED with
@@ -47,6 +47,7 @@ Gate: lower_bound_s <= total dead time (s03) for every match; estimator r>=~0.77
 """
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from src.lib import config, nate, silent
@@ -112,11 +113,22 @@ def main() -> None:
     matches = pd.read_parquet(config.INTERIM / "matches.parquet")
     match_group = matches.set_index("match_id")["group"].to_dict()
     seg["dur"] = seg["end_s"] - seg["start_s"]
-    dead_total = seg[~seg["in_play"]].groupby("match_id")["dur"].sum()
+    # Gate denominator: total measured dead time in periods 1-4 only. The penalty shootout
+    # (period 5) is ~100% "dead" by definition and is never part of lower_bound (the estimator
+    # skips period >= 5), so counting it here only inflated the reported dead total (a shootout
+    # match read ~10 extra "dead" min, e.g. 80.8 -> 71.1 for a 145-min ET+pens tie) and padded
+    # the gate with meaningless slack. Excluding it makes the gate meaningful and the dead figure
+    # honest; no output value changes (lower_bound is period-1-4 only, so the gate still holds).
+    dead_total = seg[(~seg["in_play"]) & (seg["period"] < 5)].groupby("match_id")["dur"].sum()
     # dead segments per (match_id, period) in period_s coords for intersection.
     dead_seg: dict[tuple[int, int], list[tuple[float, float]]] = {}
     for (mid, per), gg in seg[~seg["in_play"]].groupby(["match_id", "period"]):
         dead_seg[(int(mid), int(per))] = list(zip(gg["start_s"], gg["end_s"]))
+    # in-play segment starts per (match_id, period) -- ADR-0039 keys the injury window to the next
+    # live ball (next in-play segment start), the Opta-calibrated s03 boundary, not Referee Ball-Drop.
+    inplay_start: dict[tuple[int, int], "np.ndarray"] = {}
+    for (mid, per), gg in seg[seg["in_play"]].groupby(["match_id", "period"]):
+        inplay_start[(int(mid), int(per))] = np.sort(gg["start_s"].to_numpy())
 
     rows = []
     for mid, grp in events.groupby("match_id"):
@@ -131,6 +143,7 @@ def main() -> None:
             poss = g["possession"].to_numpy()
             cards = g["card"].notna().to_numpy()
             shot_out = g["shot_outcome"].fillna("").to_numpy()
+            ips = inplay_start.get((int(mid), int(period)), np.array([]))  # ADR-0039 injury resume
 
             comp = {"celebration": [], "sub": [], "card": [], "injury": [], "restart_excess": []}
             injury_present = False
@@ -155,10 +168,13 @@ def main() -> None:
                     r = _next_resume(clocks, patterns, types, i, want_patterns=RESTART)
                     if r is not None:
                         comp["card"].append((t0, min(r, t0 + p["max_card_s"])))
-                # injury
+                # injury -- ADR-0039: end at the next s03 in-play segment start (next live ball),
+                # not the inconsistently-logged Referee Ball-Drop. Spans at most one dead segment,
+                # so it cannot over-credit; the 600s cap is now a non-binding guard.
                 if typ == "Injury Stoppage":
                     injury_present = True
-                    r = _next_resume(clocks, patterns, types, i, want_type="Referee Ball-Drop")
+                    later = ips[ips > t0]
+                    r = float(later[0]) if len(later) else None
                     if r is not None:
                         comp["injury"].append((t0, min(r, t0 + p["max_injury_s"])))
 

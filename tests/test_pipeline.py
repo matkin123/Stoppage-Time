@@ -154,13 +154,17 @@ def test_s08_decay_endpoints():
     open_play 1H+2H (the decay floors only the 2H window, by design). X% is monotone in the
     half-life for the central spec (shorter half-life -> more decay -> lower X%).
 
-    NOTE (re-lock ADR-0031): these rails are the ADOPTED production rails -- Method 2 same-half
+    NOTE (re-lock ADR-0035): these rails are the ADOPTED production rails -- Method 2 same-half
     live factors (ls_half/z_half over the whole played half, ADR-0029) AND the PRE-only
     goal-celebration allowance (ADR-0030, residual_silent_pre_s=94.1). The celebration allowance
-    credits only the excess over 60s for PRE matches, lowering PRE true_stoppage, so the 'all'
-    aggregate rails sit ~0.5 pp BELOW the Method-2-only rails (which were 0.246 / 0.179 / 0.101).
-    Refresh these only if same_half_factors, the celebration constants, or the frozen inputs
-    change."""
+    credits only the excess over 60s for PRE matches, lowering PRE true_stoppage; ADR-0035 moved
+    Euro 2024 (51 matches) POST->PRE, so those matches now get excess-only crediting and the 'all'
+    aggregate rails sit ~0.8 pp BELOW the Method-2-only rails (which were 0.246 / 0.179 / 0.101).
+    ADR-0039 (injury window -> next s03 in-play start, not Referee Ball-Drop; residual_silent_pre_s
+    94.1->25.9, POST residual floored 24.2->0) refreshed these rails DOWN ~1.2 pp:
+    0.238/0.173/0.098 -> 0.226/0.161/0.090.
+    Refresh these only if same_half_factors, the celebration constants, the group classification,
+    or the frozen inputs change."""
     s = _load(config.PROCESSED / "counterfactual_summary.parquet")
     allg = s[s["group"] == "all"]
 
@@ -170,10 +174,10 @@ def test_s08_decay_endpoints():
         assert not q.empty, f"missing hl={hl}|{gw} {win}"
         return float(q.iloc[0]["pct_changed"])
 
-    # endpoint regression: adopted Method2+celebration rails (ADR-0031). Method-2-only in parens.
-    assert abs(x("inf", "off", "1H+2H") - 0.241) < 0.004     # observed rail (Method-2-only 0.246)
-    assert abs(x("inf", "off", "2H_only") - 0.175) < 0.004   # (Method-2-only 0.179)
-    assert abs(x("0.0", "off", "2H_only") - 0.099) < 0.004   # open_play floor, 2H exact (M2-only 0.101)
+    # endpoint regression: adopted rails (ADR-0031 Method2+celebration; ADR-0039 injury re-pairing).
+    assert abs(x("inf", "off", "1H+2H") - 0.226) < 0.004     # observed rail (was 0.238 pre-ADR-0039)
+    assert abs(x("inf", "off", "2H_only") - 0.161) < 0.004   # (was 0.173 pre-ADR-0039)
+    assert abs(x("0.0", "off", "2H_only") - 0.090) < 0.004   # open_play floor, 2H exact (was 0.098)
 
     # monotonicity in half-life for the central spec (gross-up on).
     xs = [x(h, "on", "1H+2H") for h in ("0.0", "2.0", "4.0", "8.0", "inf")]
