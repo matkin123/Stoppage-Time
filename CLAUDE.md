@@ -8,24 +8,24 @@ Headline target: **"Stoppage time is a sham; measured properly, X% of matches wo
 differently."** `X%` is the one modeled claim — it ships with a confidence interval and a
 sensitivity table, not a point estimate.
 
-**LOCKED (ADR-0039, 2026-07-17): X% = 23.3% [95% CI 20.1%, 27.3%]**, window 1H+2H, central
+**LOCKED (ADR-0040, 2026-07-20): X% = 21.4% [95% CI 18.2%, 25.2%]**, window 1H+2H, central
 knob_set `silent_marked|overall|pooled_all|hl=4.0|on`. Framing: *if stoppage time were measured
-and awarded per the rulebook, ~23% of matches would have ended with a DIFFERENT SCORELINE* (≥1
+and awarded per the rulebook, ~21% of matches would have ended with a DIFFERENT SCORELINE* (≥1
 extra goal in the omitted added time). The stricter "different RESULT" (winner/draw flips) is
-**12.1% [10.4%, 14.2%]** — always reported separately. Lead assumption band 20.2%–25.6%; full
-joint envelope 17.3%–27.0%. The modeling pipeline is DONE; `docs/decisions.md` is authoritative.
+**10.8% [9.1%, 12.8%]** — always reported separately. Lead assumption band 19.2%–23.7%; full
+joint envelope 16.3%–24.9%. The modeling pipeline is DONE; `docs/decisions.md` is authoritative.
 
-> **Re-locked 2026-07-17 (ADR-0039):** re-keys the s05 injury dead-time window to end at the next
-> s03 in-play segment start (the next live ball), rule `inplay`, instead of the inconsistently-logged
-> `Referee Ball-Drop` (present near only ~29% of injury flags) which fabricated ~10-min windows and
-> over-credited routine dead time. Residuals re-fit on WC2018 and floored ≥0 (`residual_silent_pre_s`
-> 94.1 → 25.9; `residual_silent_s` 24.2 → 0, raw refit −47.7s is an incoherent negative remainder).
-> Supersedes the ADR-0035 lock (24.4% / 12.9%); the −1.1 pp scoreline / −0.8 pp flip move is the
-> removed injury over-credit and stays inside the prior published envelope. Estimator re-fit r 0.875 →
-> 0.870, MAE 1.77 → 1.67 (improves). `s03/bip.py` untouched — goals and live-minutes are unchanged, so
-> productivity rates (PRE 0.089 / POST 0.075) are byte-identical; only owed/`true_stoppage` moved.
-> POST `true_stoppage` is NO LONGER byte-identical to ADR-0035 (POST residual moved 24.2 → 0).
-> `data/processed/*.parquet`, `figures/`, and `docs/numbers_ledger.md` regenerated; pytest green.
+> **Re-locked 2026-07-20 (ADR-0040):** fixes a systematic double-count in the s05 true-stoppage
+> estimator where `lower_bound_s` and `silent_marked_s` overlapped. `silent_marked_s` now computed
+> as `_intersect_total(_subtract(silent_iv, all_intervals), dead)` — lower_bound and silent_marked
+> are provably disjoint subsets of dead by construction. Both residuals refit on WC2018 and are
+> now genuinely positive (`residual_silent_pre_s` 25.9 → 204.1s; `residual_silent_s` 0.0 → 130.5s;
+> the ADR-0039 D2 floor is moot). Supersedes the ADR-0039 lock (23.3% / 12.1%); −1.9 pp scoreline /
+> −1.3 pp flip is the removed double-count, POST-concentrated (data-quality fix). Estimator re-fit
+> r 0.870 → 0.836, MAE 1.67 → 1.54 (MAE improves). `s03/bip.py` + `silent.py` untouched — BIP,
+> goals, and live-minutes are unchanged; productivity rates (PRE 0.089 / POST 0.075) byte-identical.
+> New `test_s05_dedup_lb_plus_sm_below_dead` gate added; 27/27 pytest green.
+> `data/processed/*.parquet`, `figures/`, and `docs/numbers_ledger.md` regenerated.
 
 Standard of proof: **every number traces to a script + a checkpointed table + a documented
 assumption.** If a figure can't be traced that way, it doesn't go in the article.

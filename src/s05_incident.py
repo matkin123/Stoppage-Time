@@ -30,12 +30,14 @@ for the ablation.
 The TRUE-STOPPAGE estimator adds a marker-gated silent term on top of the lower bound: of the
 >= silent.min_silent_gap_s non-restart gaps, credit ONLY those whose lead edge carries an
 out-of-play marker (src/lib/silent.py) -- the unmarked silent gaps are genuinely dead (s03 BIP
-keeps them) but a flat ~8.4 min/match non-addable baseline. A residual-silent constant frozen
-on 2018 (re-fit in IMPL-5 after adding restart_excess; re-fit again in ADR-0030 for PRE after the
-celebration allowance dropped the PRE credit) closes the irreducible remainder. The residual is
-ERA-CONDITIONAL (ADR-0030): residual_silent_pre_s for PRE, residual_silent_s for POST. The
-estimator validates against Nate Silver's `expected` column (WC2018); s03/bip.py are NOT
-touched (they stay the validated duration rule -- BIP = TOTAL dead time, stoppage = ADDABLE).
+keeps them) but a flat ~8.4 min/match non-addable baseline. The silent term is DEDUPED against
+all_intervals (_subtract) before crediting so that lower_bound_s and silent_marked_s are
+provably disjoint subsets of dead (ADR-0040). A residual-silent constant frozen on 2018
+(re-fit in IMPL-5 after adding restart_excess; ADR-0030 for PRE after celebration allowance;
+ADR-0040 after dedup) closes the irreducible remainder. The residual is ERA-CONDITIONAL
+(ADR-0030): residual_silent_pre_s for PRE, residual_silent_s for POST. The estimator validates
+against Nate Silver's `expected` column (WC2018); s03/bip.py are NOT touched (they stay the
+validated duration rule -- BIP = TOTAL dead time, stoppage = ADDABLE).
 
 In:  interim/events_norm.parquet, interim/bip_segments.parquet
 Out: interim/incident_stoppage.parquet (per match-period; adds restart_excess_s, the
@@ -96,6 +98,30 @@ def _intersect_total(a: list[tuple[float, float]], b: list[tuple[float, float]])
         else:
             j += 1
     return total
+
+
+def _subtract(
+    a: list[tuple[float, float]], b: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    """Set difference of interval lists: portions of a NOT covered by b. Both merged first.
+    Used by ADR-0040 to dedup silent_marked_s / silent_all_s against all_intervals so that
+    lower_bound_s and silent_marked_s are provably disjoint subsets of dead."""
+    a, b = _merge(a), _merge(b)
+    result: list[tuple[float, float]] = []
+    j = 0
+    for a0, a1 in a:
+        cur = a0
+        while j < len(b) and b[j][1] <= a0:
+            j += 1
+        k = j
+        while k < len(b) and b[k][0] < a1:
+            if b[k][0] > cur:
+                result.append((cur, b[k][0]))
+            cur = max(cur, b[k][1])
+            k += 1
+        if cur < a1:
+            result.append((cur, a1))
+    return result
 
 
 def main() -> None:
@@ -192,15 +218,17 @@ def main() -> None:
             base_intervals = comp["celebration"] + comp["sub"] + comp["card"] + comp["injury"]
             all_intervals = base_intervals + comp["restart_excess"]
             dead = dead_seg.get((int(mid), int(period)), [])
-            # marker-gated silent term (>= silent.min_silent_gap_s non-restart gaps whose
-            # lead edge is marked out-of-play). These gaps are >= 20s, so already dead in s03
-            # by the max-live-gap rule -- summed directly (each gap is one dead segment).
+            # marker-gated silent term: deduped against all_intervals (ADR-0040) so that
+            # lower_bound_s and silent_marked_s are disjoint subsets of dead. Before ADR-0040
+            # silent_iv was summed directly; incident windows whose resume lacked a From-...
+            # restart tag were not excluded by silent.py:74, landing in both lower_bound_s and
+            # silent_marked_s (systematic overlap ~2.78/4.21 min/match PRE/POST).
             silent_iv = silent.marked_silent_intervals(g, restart_set, sil)
-            silent_marked_s = sum(t1 - t0 for t0, t1 in silent_iv)
-            # ungated upper bound (every silent gap credited) -- the `silent_all` knob
-            # IMPL-4's sensitivity grid uses to bracket the irreducible silent uncertainty.
+            silent_marked_s = _intersect_total(_subtract(silent_iv, all_intervals), dead)
+            # ungated upper bound (every silent gap credited) -- the `silent_all` knob;
+            # deduped the same way so silent_all >= silent_marked monotonicity is preserved.
             silent_all_iv = silent.all_silent_intervals(g, restart_set, sil)
-            silent_all_s = sum(t1 - t0 for t0, t1 in silent_all_iv)
+            silent_all_s = _intersect_total(_subtract(silent_all_iv, all_intervals), dead)
             rows.append(
                 {
                     "match_id": mid,
@@ -256,11 +284,16 @@ def main() -> None:
 
     # ---- gate: lower bound <= total dead per match -----------------------
     per_match = inc.groupby("match_id")["lower_bound_s"].sum()
+    per_match_sm = inc.groupby("match_id")["silent_marked_s"].sum()
     errors = []
+    errors_sm = []
     for mid, lb in per_match.items():
         td = float(dead_total.get(mid, 0.0))
         if lb > td + 1.0:  # 1s slack for float boundary effects
             errors.append(f"match {mid}: lower_bound {lb:.0f}s > dead {td:.0f}s")
+        sm = float(per_match_sm.get(mid, 0.0))
+        if lb + sm > td + 1.0:  # ADR-0040: lb and sm are disjoint subsets of dead by construction
+            errors_sm.append(f"match {mid}: lb+sm {lb+sm:.0f}s > dead {td:.0f}s")
 
     n_no_injury = int((~inc.groupby("match_id")["injury_present"].any()).sum())
     print(f"\n  incident rows: {len(inc)}  matches w/o any Injury Stoppage event: {n_no_injury}")
@@ -269,7 +302,12 @@ def main() -> None:
             f"s05 GATE FAILED ({len(errors)} matches exceed dead time):\n  "
             + "\n  ".join(errors[:15])
         )
-    print("  s05 gate PASSED (lower_bound <= total dead time for every match)")
+    if errors_sm:
+        raise SystemExit(
+            f"s05 GATE FAILED lb+sm>dead ({len(errors_sm)} matches):\n  "
+            + "\n  ".join(errors_sm[:15])
+        )
+    print("  s05 gate PASSED (lower_bound_s <= dead; lower_bound_s + silent_marked_s <= dead)")
 
 
 if __name__ == "__main__":

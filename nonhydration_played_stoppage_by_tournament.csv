@@ -1,0 +1,8 @@
+tournament,tournament_key,regime,n_matches,mean_nonhydration_played_stoppage_min
+UEFA Euro 2024,euro_2024,PRE (pre-2022 directive),51,7.26
+FIFA World Cup 2018,wc_2018,PRE (pre-2022 directive),64,7.08
+UEFA Euro 2020,euro_2020,PRE (pre-2022 directive),51,6.51
+African Cup of Nations 2023,afcon_2023,POST (post-2022 directive),52,11.91
+FIFA World Cup 2022,wc_2022,POST (post-2022 directive),64,11.4
+Copa America 2024,copa_america_2024,POST (post-2022 directive),32,8.71
+"FIFA World Cup 2026 (live, thru R16)",wc_2026,2026 (hydration + anti-time-wasting),90,5.27

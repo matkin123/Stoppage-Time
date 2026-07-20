@@ -61,20 +61,24 @@ silent:
   # residual and into the marked pieces, so the POST (full-gap celebration) re-fit goes NEGATIVE
   # (-47.7s) -- an incoherent "irreducible remainder" (a claw-back, not a leftover-to-add) -- and is
   # FLOORED AT 0 (D2). FROZEN; applied per-match to all POST matches (no POST ground truth to fit on).
-  residual_silent_s: 0.0         # POST (full-gap celebration); ADR-0039 floored at 0 (refit -47.7s)
+  residual_silent_s: 130.5       # POST (full-gap celebration); ADR-0040 re-fit after dedup (was 0.0/floored)
   # PRE (pre-2022) residual (ADR-0030). The PRE celebration credit is the EXCESS over
   # celebration_normal_s (60s), so the PRE-2018 marked total is smaller and the residual larger.
   # RE-FIT on the 32 WC2018 matches: mean(Nate expected) - mean(lower_bound + silent_marked).
-  # ADR-0030 fit 94.09s; ADR-0039 re-fit under the inplay injury rule = 25.9s (positive, kept as-is).
+  # ADR-0030 fit 94.09s; ADR-0039 re-fit under the inplay injury rule = 25.9s; ADR-0040 re-fit
+  # after silent dedup = 204.1s (rises because dedup removes double-counted injury overlap).
   # FROZEN; applied to all PRE matches (WC2018 + Euro2020 + Euro2024).
-  residual_silent_pre_s: 25.9    # PRE (pre-directive), celebration credited as excess; ADR-0039 re-fit on WC2018
+  residual_silent_pre_s: 204.1   # PRE (pre-directive), celebration credited as excess; ADR-0040 re-fit on WC2018
   # Estimator validation residuals on the 32 WC2018 matches (full-match totals vs Nate
   # `expected`). Re-fit IMPL-5 (ADR-0017: r 0.768->0.825), ADR-0030 (PRE celebration: r 0.825->0.875,
-  # MAE 2.44->1.77), ADR-0039 (inplay injury pairing: r 0.875->0.870, MAE 1.77->1.67 -- MAE improves).
+  # MAE 2.44->1.77), ADR-0039 (inplay injury pairing: r 0.875->0.870, MAE 1.77->1.67),
+  # ADR-0040 (silent dedup: r 0.870->0.836, MAE 1.67->1.54 -- MAE improves; r slightly lower because
+  # dedup removes incident-correlated signal from silent term; uniform residual 204.1s compensates at
+  # aggregate level; D2 floor from ADR-0039 is MOOT -- POST residual now positive).
   # IMPL-4 uses estimator_mae_min as the per-match sigma when propagating estimator uncertainty into
   # the X% confidence band.
-  estimator_pearson_r: 0.870
-  estimator_mae_min: 1.67
+  estimator_pearson_r: 0.836
+  estimator_mae_min: 1.54
 
 phases:
   # Stoppage threshold in WITHIN-PERIOD seconds: period_s >= 2700 means past 45:00 in a

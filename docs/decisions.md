@@ -5,6 +5,44 @@ number and its band must be locked here (with the chosen knob_set) before publis
 
 ---
 
+## ADR-0040 — HEADLINE RE-LOCKED at 21.4% scoreline / 10.8% flip (silent_marked dedup: lower_bound_s and silent_marked_s made provably disjoint; residuals refit) (2026-07-20)
+
+**Human checkpoint, user-approved adoption (2026-07-20).** Supersedes ADR-0039's locked numbers.
+
+A systematic double-count in the s05 true-stoppage estimator was identified and fixed. `true_stoppage_s = lower_bound_s + silent_marked_s + residual` was summing two terms that partially overlap: `silent.marked_silent_intervals` excludes a silent gap only when the next possession opens with a `From …` restart tag (`silent.py:74`). An injury/sub/card window whose resume event lacks that tag — logged instead as `Goal Keeper`, `Shot`, or `Regular Play` — is NOT excluded, so the same dead seconds land in BOTH `lower_bound_s` (via the incident component) AND `silent_marked_s`. Overlap confirmed on 281/314 matches (>0.5 min), max 15.0 min; POST-concentrated because loose restart tagging tracks data quality (PRE 2.78 min/match, POST 4.21 min/match).
+
+**The fix (Fix A = dedup-in-s05).** A new `_subtract(a, b)` interval helper was added to `src/s05_incident.py`. Before crediting, `silent_marked_s` and `silent_all_s` are computed as `_intersect_total(_subtract(silent_iv, all_intervals), dead)` — the marked/ungated intervals MINUS any seconds already covered by `all_intervals` (the union of all incident windows). By construction, `lower_bound_s` and `silent_marked_s` are now provably disjoint subsets of `dead`; the double-count is zero and `lb + sm ≤ dead` holds as a structural invariant. A new runtime gate and pytest test (`test_s05_dedup_lb_plus_sm_below_dead`) enforce this going forward. Fix B (patching `silent.py` to skip incident-lead-edge gaps) was also safe (BIP is confirmed to NOT import silent.py), but less surgical — Fix A was adopted.
+
+**Residual handling — both residuals now genuinely positive.** Under dedup, `dedup_sm` drops from 4.28 to 0.83 min/match (mean), and mean `lb+dedup_sm` falls well below the Nate WC2018 anchor. Both era residuals are re-fit on the 32 WC2018 matches:
+- **PRE** (`residual_silent_pre_s`): 25.9 → **204.1s** (rises to re-anchor WC2018 to Nate 13.16 min/match after dedup removes the previously double-counted PRE overlap ~2.58 min/match).
+- **POST** (`residual_silent_s`): 0.0 → **130.5s** (was floored at 0 in ADR-0039 from an incoherent −47.7s raw refit; after dedup the raw refit is +130.5s — genuinely positive). **The ADR-0039 D2 floor is MOOT.** The fact that the incoherent negative residual (which ADR-0039 had to floor) becomes a coherent positive after dedup is the strongest evidence the fix is correct.
+
+**Calibration re-fit on WC2018 (n=32).** r 0.870 → **0.836**, MAE 1.67 → **1.54 min** (MAE improves). r drops because dedup removes incident-correlated signal from the silent term; the uniform 204.1s PRE residual re-anchors the aggregate. Both r and MAE remain well above historical baselines (0.655 lb-only → 0.768 +silent → 0.825 +restart_excess). Silent still reported as the single Nate-WC2018-calibrated POINT, never a none/all band (ADR-0025 unchanged).
+
+**Headline framing UNCHANGED.** *If stoppage time were measured and awarded per the rulebook, **X% of matches would have ended with a DIFFERENT SCORELINE*** (≥1 extra goal in the omitted added time). Metric unchanged (ADR-0019): X% = mean(1 − exp(−μ)), μ = Σ_h λ_h · omitted_live_h.
+
+**LOCKED VALUES (regenerated grid, group=all, window=1H+2H).**
+- **Central: X% = 21.4% [95% CI 18.2%, 25.2%]**, knob_set `silent_marked|overall|pooled_all|hl=4.0|on`.
+- **HEADLINE BAND (lead, one-factor-at-a-time over the legitimate knobs): 19.2%–23.7%** (width 4.5% ≈ 0.6× sampling CI 7.0 pts). **Full joint envelope** (all legitimate knobs varied together): **16.3%–24.9%** (width 8.6% ≈ 1.2× sampling).
+- **Outcome-flip secondary (reported SEPARATELY): 10.8% [9.1%, 12.8%]** (1H+2H).
+- 2H_only comparison: scoreline **14.2% [12.1%, 16.6%]**, flip **6.9% [5.9%, 8.2%]**.
+
+**Legitimate-knob sensitivities (each swept with the others at central, 1H+2H, silent FIXED at the calibrated marked point).**
+- **Productivity-decay half-life** h∈[2,8], central h=4: **20.2% (h2) .. 21.4% (h4) .. 22.4% (h8)**.
+- **In-stoppage gross-up** (central ON): off **19.2%** → **21.4% (ON, central)** → geometric ceiling **21.9%**.
+- **λ source**: pooled_all **21.4%** (central) · pooled_pre **23.7%** (sets lead-band top) · pooled_post **19.7%** · regime_matched **21.8%**. Lead-band bottom (19.2%) is gross-up-OFF rail.
+- **Conditioning**: overall **21.4%** (central) · tied_nontied **21.0%** (within noise).
+- Endpoint regression (gross-up OFF): 1H+2H h=inf **21.0%** / h=0 **15.0%**; 2H_only h=inf **14.6%** / h=0 **8.0%**.
+- **Stage-source robustness (ADR-0033, reported row, EXCLUDED from band):** group stage **22.5%** · all **21.4%** (central) · knockout **18.2%**.
+
+**Why the number moved (23.3% → 21.4%, −1.9 pp scoreline; 12.1% → 10.8%, −1.3 pp flip) — expected and coherent.** The dedup removes double-counted dead seconds, lowering `true_stoppage` → lowering omitted live-time → lowering P(change). The effect is POST-concentrated (POST overlap 4.21 vs PRE 2.78 min/match), but the calibration re-anchoring on WC2018 restores PRE nearly to baseline (+0.19 min/match owed); net POST owed drops 2.04 min/match, pooled −0.86 min/match. Owed averages 16.16 min/match (was 17.0), played unchanged 8.86, omitted 7.34 min (was ~8.2), positive in 97.8% of matches. The whole X% surface shifts down ~1.9 pp, staying inside the prior published envelope ([17.3%, 27.0%] → [16.3%, 24.9%]). The −1.9 pp trip on the ">1 pp → bring to human" guardrail was surfaced and approved.
+
+**PRE/POST natural experiment.** PRE 21.0% [17.7%, 24.8%] vs POST 21.9% [18.6%, 26.1%] — nearly identical after the data-quality correction. The old gap (PRE 20.6% vs POST 26.5%, 5.9 pp) was primarily an artifact of POST tournaments (AFCON, Copa) having looser restart tagging → larger double-counts → inflated POST owed. After dedup, the AFCON and Copa over-crediting is removed and the PRE/POST scoreline gap closes to 0.9 pp. **This is a data-quality correction, not a change to the natural-experiment story**: owed stoppage remains higher in POST (18.92 vs 13.70 min/match) and played stoppage is higher (11.00 vs 6.96 min/match), but the *probability of a game-changing outcome in the omitted time* is essentially equal across eras, reflecting that both eras systematically under-award.
+
+**Provenance.** Code: `src/s05_incident.py` (`_subtract` helper added after `_intersect_total`; `silent_marked_s` and `silent_all_s` recomputed with `_subtract(silent_iv, all_intervals)` before intersecting with `dead`; new runtime gate `lb + sm ≤ dead`; docstring updated). `src/lib/silent.py` UNCHANGED. Params: `residual_silent_pre_s` 25.9 → 204.1, `residual_silent_s` 0.0 → 130.5, `estimator_pearson_r` 0.870 → 0.836, `estimator_mae_min` 1.67 → 1.54; all other constants UNCHANGED. Tests: new `test_s05_dedup_lb_plus_sm_below_dead`; `test_s08_decay_endpoints` rails 0.226/0.161/0.090 → 0.210/0.146/0.080 (±0.004 tolerance UNCHANGED). Re-ran s05 → s06b → s08 → s09; `incident_stoppage.parquet`, `true_stoppage.parquet`, `counterfactual_summary.parquet`, `figures/`, and `docs/numbers_ledger.md` regenerated. 27/27 pytest green. `config/tournaments.yaml`, `src/lib/silent.py`, `src/s03_bip.py`, the WC2026/Sky lane, and every prior ADR's recorded numbers are untouched. ADR-0039 below is retained as the historical record; its numbers are SUPERSEDED by this entry.
+
+---
+
 ## ADR-0039 — HEADLINE RE-LOCKED at 23.3% scoreline / 12.1% flip (s05 injury window re-keyed to the next live ball; residuals floored ≥0) (2026-07-17)
 
 **Human checkpoint, user-approved adoption (2026-07-17).** Supersedes ADR-0035's locked numbers.

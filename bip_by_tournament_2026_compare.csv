@@ -1,0 +1,12 @@
+tournament,group,source,n_matches,mean_match_min,bip_raw_min_per_match,bip_pct
+Euro 2020,PRE,StatsBomb gap-method (regulation),51,96.5,56.47,58.51
+Euro 2024,PRE,StatsBomb gap-method (regulation),51,97.26,57.17,58.78
+WC 2018,PRE,StatsBomb gap-method (regulation),64,97.08,56.0,57.69
+AFCON 2023,POST,StatsBomb gap-method (regulation),52,101.91,49.23,48.3
+Copa America 2024,POST,StatsBomb gap-method (regulation),32,98.71,48.11,48.74
+WC 2022,POST,StatsBomb gap-method (regulation),64,101.4,57.67,56.87
+— PRE pooled —,PRE,StatsBomb gap-method (regulation),166,96.96,56.5,58.28
+— POST pooled —,POST,StatsBomb gap-method (regulation),148,101.0,52.64,52.12
+— all six pooled —,ALL,StatsBomb gap-method (regulation),314,98.86,54.68,55.31
+WC 2026 (regulation),2026,Sky Sports (excl. extra-time matches),90,102.45,58.16,56.77
+WC 2026 (all matches),2026,Sky Sports (incl. extra-time matches),96,104.58,59.38,56.78

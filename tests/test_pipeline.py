@@ -163,6 +163,9 @@ def test_s08_decay_endpoints():
     ADR-0039 (injury window -> next s03 in-play start, not Referee Ball-Drop; residual_silent_pre_s
     94.1->25.9, POST residual floored 24.2->0) refreshed these rails DOWN ~1.2 pp:
     0.238/0.173/0.098 -> 0.226/0.161/0.090.
+    ADR-0040 (silent dedup: lower_bound_s and silent_marked_s are now provably disjoint subsets of
+    dead; residuals refit on WC2018 after dedup: PRE 25.9->204.1s, POST 0->130.5s) refreshed DOWN
+    ~1.6 pp: 0.226/0.161/0.090 -> 0.210/0.146/0.080.
     Refresh these only if same_half_factors, the celebration constants, the group classification,
     or the frozen inputs change."""
     s = _load(config.PROCESSED / "counterfactual_summary.parquet")
@@ -174,11 +177,28 @@ def test_s08_decay_endpoints():
         assert not q.empty, f"missing hl={hl}|{gw} {win}"
         return float(q.iloc[0]["pct_changed"])
 
-    # endpoint regression: adopted rails (ADR-0031 Method2+celebration; ADR-0039 injury re-pairing).
-    assert abs(x("inf", "off", "1H+2H") - 0.226) < 0.004     # observed rail (was 0.238 pre-ADR-0039)
-    assert abs(x("inf", "off", "2H_only") - 0.161) < 0.004   # (was 0.173 pre-ADR-0039)
-    assert abs(x("0.0", "off", "2H_only") - 0.090) < 0.004   # open_play floor, 2H exact (was 0.098)
+    # endpoint regression: adopted rails (ADR-0031 Method2+celebration; ADR-0040 silent dedup).
+    assert abs(x("inf", "off", "1H+2H") - 0.210) < 0.004     # observed rail (was 0.226 pre-ADR-0040)
+    assert abs(x("inf", "off", "2H_only") - 0.146) < 0.004   # (was 0.161 pre-ADR-0040)
+    assert abs(x("0.0", "off", "2H_only") - 0.080) < 0.004   # open_play floor, 2H exact (was 0.090)
 
     # monotonicity in half-life for the central spec (gross-up on).
     xs = [x(h, "on", "1H+2H") for h in ("0.0", "2.0", "4.0", "8.0", "inf")]
     assert all(b >= a - 1e-9 for a, b in zip(xs, xs[1:])), f"X% not monotone in half-life: {xs}"
+
+
+def test_s05_dedup_lb_plus_sm_below_dead():
+    """ADR-0040 gate: after Fix A (_subtract), lower_bound_s + silent_marked_s must not
+    exceed total dead time. Provably true by construction (both are disjoint subsets of
+    dead via _intersect_total + _subtract), but verified here as an explicit production guard."""
+    inc = _load(config.INTERIM / "incident_stoppage.parquet")
+    seg = _load(config.INTERIM / "bip_segments.parquet")
+    seg["dur"] = seg["end_s"] - seg["start_s"]
+    dead = seg[~seg["in_play"]].groupby("match_id")["dur"].sum()
+    for _, row in inc.iterrows():
+        mid = row["match_id"]
+        total = row["lower_bound_s"] + row["silent_marked_s"]
+        cap = dead.get(mid, 0.0) + 1.0
+        assert total <= cap, (
+            f"match {mid} period {row['period']}: lb+sm {total:.1f}s > dead {dead.get(mid,0):.1f}s"
+        )

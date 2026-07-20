@@ -495,13 +495,13 @@ def _scatter_estimate_pub(sc, out_name="agg_01_scatter_estimate_vs_played.png",
         ax.tick_params(length=0, labelsize=9.5)
 
         if source is None:
-            # Footer means track the current lock (ADR-0039): owed 17.0 / played 8.8 /
-            # missing 8.2 kept as a consistent trio (17.0-8.8=8.2) matching the article's
-            # stated owed 17.0 & omitted 8.2; r/MAE read from params so they never drift.
+            # Footer tracks the current lock (ADR-0040): owed 16.2 / played 8.9 /
+            # missing 7.3 kept as a consistent trio (16.2-8.9=7.3) matching the article's
+            # stated owed 16.2 & omitted 7.3; r/MAE read from params so they never drift.
             p = config.params()["silent"]
             source = (FOOTER.split("\n")[0] +
-                      "\n“Typical” is the median. Mean values are: stoppage owed 17.0 mins, "
-                      "played 8.8 mins, and missing 8.2 mins." +
+                      "\n“Typical” is the median. Mean values are: stoppage owed 16.2 mins, "
+                      "played 8.9 mins, and missing 7.3 mins." +
                       "\nData includes both regular-time and extra-time matches." +
                       "\nSource: StatsBomb open data; author’s analysis, calibrated to "
                       f"Nate Silver at r = {p['estimator_pearson_r']:.2f}, "
