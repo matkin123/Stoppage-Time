@@ -36,19 +36,19 @@ def main():
 
     # ---- agg_01: true stoppage estimate vs stoppage actually played (wide) ----
     scat_source = (
-        f"Data includes all {n} matches from the 2026 World Cup.\n"
-        f"“Typical” is the median. Mean values are: stoppage owed {owed:.1f} mins, "
+        f"Data includes all 96 matches from the 2026 World Cup through the Round of 16.\n"
+        f"”Typical” is the median. Mean values are: stoppage owed {owed:.1f} mins, "
         f"played {played:.1f} mins, and nearly {missing:.0f} mins missing.\n"
         "Source: Opta")
     scat_subtitle = [
         f"Each dot is a match from the 2026 World Cup. {pct_above:.0%} of matches "
-        "ended too early (shown in red),",
+        "ended too early,",
         "with more stoppage owed than was actually played."]
     fr._scatter_estimate_pub(
         sc,
         out_name="agg_01_scatter_estimate_vs_played_wide.png",
         side_pad_in=0.3, border=True, ax_dx=-0.036,
-        title="Stoppage time has been under-awarded in every\n2026 World Cup match",
+        title="Stoppage time was under-awarded in every\n2026 World Cup match",
         subtitle=scat_subtitle,
         source=scat_source,
         marker_arrowstyle="-",
@@ -56,7 +56,7 @@ def main():
 
     # ---- agg_02: goals per live minute by stage of the match (bordered) ----
     bar_source = (
-        f"Data includes all {n} matches from the 2026 World Cup; goals scored in "
+        f"Data includes all 96 matches from the 2026 World Cup through the Round of 16; goals scored in "
         "regulation (first and second half).\nSource: Opta")
     bar_subtitle = [
         "Goals per live minute by stage of the match. Scoring climbs "
@@ -67,6 +67,7 @@ def main():
         prod,
         out_name="agg_02_productivity_by_bucket_bordered.png",
         side_pad_in=0.3, border=True,
+        title="Goal scoring increased dramatically in stoppage time",
         source=bar_source,
         subtitle=bar_subtitle,
         annotation=bar_annotation,

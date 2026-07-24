@@ -431,7 +431,123 @@ lane still not in the public narrative). Memory `project_wc2026_halftime_sub_fix
 
 ---
 
-## >>> NEXT UNIT #1 (TOP PRIORITY — authoritative next session) — Re-render the two WC2026 charts from the APPROVED ADR-0038 tables
+## >>> NEXT UNIT #0 (NEW TOP PRIORITY) — Fix penalty dead-time in WC2026 owed estimator (ADR-0041)
+
+**Lane.** WC2026 (Sky / Opta) only. Do NOT touch the locked StatsBomb pipeline, `config/*`,
+`data/processed/*.parquet` (outside `data/processed/sky_wc2026/`), or any prior ADR.
+`data/DONOTSHAREWorldCup_Stoppages.xlsx` is git-ignored — **never commit or share it.**
+
+### The problem
+
+The current `compute_owed` ladder in `build_wc2026_inputs.py` classifies penalty-setup dead time as an
+ordinary **free kick** and credits only the EXCESS over Nate's 60-second free-kick allowance. Penalties
+are not routine free kicks — the entire stoppage (VAR confirmation, spot-marking, run-up review, keeper
+positioning) is mandatory stoppage time that must be compensated in full with no deduction.
+
+**Confirmed on Mexico v England P2 (July 5, R16):** the foul by Gordon at 57:13 triggered a 2-minute-37-second
+penalty process before Kane converted at 59:50. The current model credits only 97.5s excess (157s − 60s).
+The correct credit is 157s in full. This one gap changes Mexico v England P2 owed from 17:08 to 18:07,
+and the shortfall from 5:04 to 6:03. Restart excess (the discretionary component) shrinks from 1:47 to
+just 0:09 — essentially zero.
+
+### How to detect penalties in the Opta feed
+
+Opta flags penalties with **qualifier `'9'`** on the `end_qids` of the candidate gap. Verified from the
+workbook: the 157s gap has `end_qids` including `'9'`, and the Kane goal event itself carries
+`280=PENALTY_WON`. Across all 96 WC2026 matches there are **20 gaps with `'9' in end_qids`**:
+
+| start_evt → end_evt | count | current treatment | correct treatment |
+|---|---|---|---|
+| Type 28 → Penalty faced | 7 | DELAY-FULL (already correct) | DELAY-FULL ✓ |
+| Type 28 → Attempt saved | 1 | DELAY-FULL (already correct) | DELAY-FULL ✓ |
+| Foul → Penalty faced | 4 | free-kick excess | **full D** |
+| Foul → Goal | 2 | free-kick excess | **full D** |
+| Foul → Attempt saved | 2 | free-kick excess | **full D** |
+| Card → Penalty faced | 2 | card credit (min(D,120)) | **full D** |
+| Foul → Deleted event | 1 | free-kick excess | **full D** |
+| Deleted event → Penalty faced | 1 | excluded (rule 8) | **full D** |
+
+8 are already covered by DELAY-FULL; **12 gaps need the fix.**
+
+### The fix (two files)
+
+**1. `src/sky_wc2026/build_wc2026_inputs.py` — `compute_owed()` main per-gap ladder**
+
+Add `'penalty'` to the COMP list (after `'celebration'`, before the restart block):
+
+```python
+COMP = ["hydration", "injury", "sub", "card", "celebration", "penalty",
+        "throw-in", "goal-kick", "corner", "free-kick", "delay", "seam", "leadin"]
+```
+
+In the per-gap non-delay block, add a penalty check **before** the `resolve_restart` call (i.e. after
+the celebration branch):
+
+```python
+# 5.5. penalty — Opta qualifier 9 marks the penalty setup/execution; full D credited, no allowance
+if "9" in qids:
+    acc["penalty"] += D; continue
+```
+
+This supersedes the free-kick branch for `family='Foul'` gaps that carry Q9, and catches the
+`Card → Penalty faced` and `Deleted → Penalty faced` patterns that would otherwise hit card/excluded.
+
+Also add `"penalty"` to the `owed_` column output in `build_agg01` (it picks up all COMP columns
+automatically via the `comp_cols` list comprehension — no additional change needed there).
+
+Update the module docstring's penalty note (add one line: "Penalty setup credited in full (Q9); no
+Nate deduction.").
+
+**2. `src/sky_wc2026/anecdote_candidates.py` — `compute_owed_per_period()`**
+
+Same change: add `'penalty'` to COMP, add the Q9 check before `resolve_restart`. The editorial script
+must stay byte-consistent with the production pipeline.
+
+### Steps
+
+1. **Print all 20 Q9 gaps first** (read-only pass) to confirm no unexpected pattern before editing:
+   ```python
+   q9 = [g for g in T["cand"] if "9" in g["end_qids"]]
+   for g in sorted(q9, key=lambda x: (x["match"], x["period"], x["start_min_abs"])):
+       print(g["match"], g["period"], g["start_min_abs"], g["D"], g["start_evt"], g["end_evt"], g["family"])
+   ```
+   Verify: 20 total; the 8 delay-boundary rows already get DELAY-FULL credit (they'll hit the delay
+   branch before reaching the per-gap ladder, so the Q9 branch there is harmless but unreachable for
+   those 8); the remaining 12 hit the ladder and need the fix.
+
+2. **Edit both files** as above.
+
+3. **Regenerate `agg01` / `ledger.md`** by running `python -m src.sky_wc2026.build_wc2026_inputs`
+   (or `python src/sky_wc2026/build_wc2026_inputs.py`). The ledger gate G2 (OWED ≤ total dead broad)
+   must still pass — penalty windows are within the total dead by construction.
+
+4. **Verify the Mexico v England change** in the regenerated `agg01_estimate_vs_played.csv`:
+   - P2 owed: 1087.3s = 18:07 (was 1027.8s = 17:08)
+   - The `owed_penalty_min` column should show 2.62 min for this match (157s / 60)
+   - The `owed_freekick_min` column should drop by 97.5s (from 101.4s → 4.0s tournament-wide for this
+     match's contribution)
+
+5. **Write ADR-0041** in `docs/decisions.md`: penalty detection rule (Q9 in end_qids), 20 gaps
+   affected, 12 newly corrected, before→after on mean OWED across 96 matches.
+
+6. **Re-render the two WC2026 charts** (`python -m src.sky_wc2026.render_wc2026_charts`) since
+   `est_min` changes per-match. Check the scatter footer — the mean OWED will tick up slightly from
+   the ~19.9 that ADR-0038 produced.
+
+7. **README §7 check:** WC2026 lane is still not in the public narrative → expect "README: no change
+   needed". Confirm with `grep -niE 'sky_wc2026|wc 2026|world cup 2026' README.md`.
+
+8. Update this `next_session.md` pointer (mark DONE with the before→after delta), update memory
+   `project_sky_wc2026.md` with the penalty rule, and STOP.
+
+**Guardrails:** do NOT touch the locked StatsBomb pipeline, `config/params.yaml`, `config/tournaments.yaml`,
+any `data/processed/*.parquet` outside `data/processed/sky_wc2026/`, or any prior ADR's numbers. Do
+NOT commit unless the human explicitly asks. The COMP list and per-gap ladder are WC2026-only
+(`build_wc2026_inputs.py`); the StatsBomb s05 pipeline has separate logic and is unaffected.
+
+---
+
+## >>> NEXT UNIT #1 (was TOP PRIORITY — now behind Unit #0) — Re-render the two WC2026 charts from the APPROVED ADR-0038 tables
 
 **Role / lane.** WC2026 (Sky / Opta) lane ONLY. Do NOT touch the locked StatsBomb pipeline, `config/*`,
 `data/processed/*.parquet` (outside `data/processed/sky_wc2026/`), or any prior ADR. The workbook
