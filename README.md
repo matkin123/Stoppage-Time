@@ -234,11 +234,35 @@ calibrated to the defensible middle and only its calibration error enters the CI
 **Flip mechanics.** The model splits omitted-time goals 50/50 (Objection 4) and treats any match
 leading by two-plus at 90 as unflippable; 95 of 314 matches were already decided by ≥2 goals at 90.
 
-**The honest limitation.** The owed-stoppage estimator is anchored on World Cup 2018, then frozen
-and applied unchanged to the other five tournaments — a transfer that crosses the 2022 directive
-(the lone calibration tournament, World Cup 2018, is PRE, while the headline pools all six
-tournaments across the directive) and an extrapolation (owed time runs 16–22 min/match across the
-POST tournaments vs 13 for 2018, with Copa and AFCON considerably above the calibration level). 
+**Limitations.** This is a counterfactual model: the assumptions are evidence-grounded, but the
+output is unfalsifiable — no one ever played the stoppage time that was not played, so there is no
+external truth to test against. The specific caveats:
+
+- **Calibration transfer.** The owed-stoppage estimator (Step 1) is fit on World Cup 2018 — the
+  lone tournament an independent observer hand-measured — then frozen and applied unchanged to the
+  other five. That crosses the 2022 directive, when owed time jumped from 13 min (WC2018) to ~19.
+  The mechanics update for the policy change (e.g. crediting the full goal-celebration window, not
+  just the excess), but the POST estimate cannot be validated externally.
+- **Poisson scoring.** Goals are modeled as independent draws at a fixed per-minute rate; real
+  goals are not independent (a goal shifts tactics, momentum, scoreline pressure). Poisson is the
+  standard first pass for a rate × exposure question, and the *scoreline* claim needs only the total
+  expected goals in the omitted window, which it captures well. State-dependent dynamics would need
+  a fuller (Bayesian) treatment.
+- **Result vs scoreline.** Flipping a scoreline needs one more goal by either side; changing a
+  *result* needs to know which side scores — a per-team probability this model does not build — so
+  it is reported separately. The 10.8% flip splits into 6.7 pts from matches level at 90 (any goal
+  flips) and 4.1 pts from one-goal games (team quality decides). Only that 4.1-pt slice is sensitive
+  to a better per-team model, and swapping the flat 50/50 split for an Elo-conditioned one moves the
+  figure ≤0.4 pts (ADR-0034), so the aggregate stays ~11%.
+- **Pooling.** The six tournaments differ in owed time (Copa 20.4, AFCON 21.9 vs Euros ~14), but the
+  model pools only the stoppage-time goals-per-live-minute rate, applied to each match's own omitted
+  minutes; re-sourcing it PRE-only, POST-only, or regime-matched keeps the headline in band. The
+  pool exists for sample size; a regional pool (Copa, AFCON) beats a longer time horizon (pre-2018)
+  because football varies less across space than time — relative Elo gaps are stable at 157–203
+  (spread <50), with AFCON ~300 lower on absolute strength only.
+- **No match-specific conditioning.** The model ignores substitutions, fitness/injuries, bench
+  strength, weather, and pitch — factors that belong to a match-by-match prediction. The headline is
+  an average over 314 matches, where such factors enter the observed scoring rates only in aggregate.
 
 ---
 
