@@ -1,4 +1,4 @@
-# Stoppage time is a sham.
+# The Stoppage Time That Never Gets Played
 
 > *If stoppage time were measured and awarded in full, **21.4%** of matches would have finished
 > with a different scoreline [95% CI 18.2%, 25.2%] — and **10.8%** with a different result
